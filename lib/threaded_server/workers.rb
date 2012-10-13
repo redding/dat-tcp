@@ -1,59 +1,96 @@
+# Threaded server workers is a class for managing the worker threads that are
+# spun up to handle clients. It manages a list of working threads and provides
+# external methods for working with them. Working threads are managed by
+# creating a new one when `process` is called. A client connection and a block
+# are passed to the worker thread for it to handle the connection. Once it's
+# done handling the thread, the connection is closed and the thread is removed
+# from the list. This iignals some of the other methods that the workers class
+# provides that wait on threads to finish.
+#
+require 'thread'
+
+require 'threaded_server/client_socket'
+
 class ThreadedServer
 
   class Workers
-    attr_reader :server, :max, :list, :logger
+    attr_reader :max, :list, :logger
 
-    def initialize(server, max, logger)
-      @server = server
+    def initialize(max = 1, logger = nil)
       @max = max
-      @list = []
       @logger = logger
+      @list = []
 
       @mutex = Mutex.new
-      @resource = ConditionVariable.new
+      @condition_variable = ConditionVariable.new
     end
 
+    # This uses the mutex and condition variable to sleep the current thread
+    # until signaled. When a thread closes down, it signals, causing this thread
+    # to wakeup. This will run the loop again, and as long as a worker is
+    # available, the method will return. Otherwise it will sleep again waiting
+    # to be signaled.
     def wait_for_available
       @mutex.synchronize do
         while self.list.size >= self.max
-          @resource.wait(@mutex)
+          @condition_variable.wait(@mutex)
         end
       end
     end
 
-    def handle(client)
+    def process(connection, &block)
       worker_id = self.list.size + 1
-      @list << Thread.new do
-        self.serve_client(worker_id, client)
-      end
+      client = ThreadedServer::ClientSocket.new(connection)
+      @list << Thread.new{ self.serve_client(worker_id, client, &block) }
     end
 
-    def stop
-      self.list.each{|thread| thread.join }
+    # Finish simply sleeps the current thread until signaled. Again, when a
+    # worker thread closes down, it signals. This will cause this to wake up and
+    # continue running the loop. Once the list is empty, the method will return.
+    # Otherwise this will sleep until signaled again. This is a graceful
+    # shutdown, letting the threads finish their processing.
+    def finish
+      @mutex.synchronize do
+        while !self.list.empty?
+          @condition_variable.wait(@mutex)
+        end
+      end
     end
 
     protected
 
-    def log(message, worker_id, peeraddr)
-      host, port = [ peeraddr[2], peeraddr[1] ]
-      self.logger.info("[Worker##{worker_id}|#{host}:#{port}] #{message}")
+    def log(message, worker_id)
+      self.logger.info("[Worker##{worker_id}] #{message}") if self.logger
     end
 
-    def serve_client(worker_id, client)
+    def serve_client(worker_id, client, &block)
       begin
-        peeraddr = client.peeraddr
-        self.log("Connecting", worker_id, peeraddr)
-        self.server.serve(client)
+        host, port = [ client.peeraddr[2], client.peeraddr[1] ]
+        self.log("Connecting #{host}:#{port}", worker_id)
+        block.call(client)
       rescue Exception => exception
-        self.log("Exception occurred, stopping worker", worker_id, peeraddr)
+        self.log("Exception occurred, stopping worker", worker_id)
       ensure
-        client.close rescue false
-        @mutex.synchronize do
-          @list.delete(Thread.current)
-          @resource.signal
-        end
-        self.log("Disconnecting", worker_id, peeraddr)
+        self.disconnect_client(worker_id, client, exception)
       end
+    end
+
+    # Closes the client connection and also shuts the thread down. This is done
+    # by removing the thread from the list. This is wrapped in a mutex
+    # synchronize, to ensure only one thread interacts with list at a time. Also
+    # the condition variable is signaled to trigger the `finish` or
+    # `wait_for_available` methods.
+    def disconnect_client(worker_id, client, exception)
+      client.close rescue false
+      @mutex.synchronize do
+        @list.delete(Thread.current)
+        @condition_variable.signal
+      end
+      if exception
+        self.log("#{exception.class}: #{exception.message}", worker_id)
+        self.log(exception.backtrace.join("\n"), worker_id)
+      end
+      self.log("Disconnecting #{host}:#{port}", worker_id)
     end
 
   end

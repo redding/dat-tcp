@@ -17,8 +17,13 @@ module Bench
       benchmarks << time_taken
       puts "request ##{index} -> #{time_taken}ms"
     end
-    total_time_taken = benchmarks.inject(0){|s, n| s + n }
-    puts "all requests run -> #{total_time_taken}"
+    total_time = benchmarks.inject(0){|s, n| s + n }
+    average_time = total_time / benchmarks.size
+    average_time = (average_time * TIME_MODIFIER).to_i / TIME_MODIFIER.to_f
+    total_time = (total_time * TIME_MODIFIER).to_i / TIME_MODIFIER.to_f
+    puts "all requests run"
+    puts "average time: #{average_time}ms"
+    puts "total time: #{total_time}ms"
   end
 
   def self.run_request(host, port)

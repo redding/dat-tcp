@@ -22,7 +22,7 @@ module Bench
       end
     end
     server.start
-    server.join
+    server.join_thread
   end
 
   def self.stop_server
@@ -33,17 +33,35 @@ module Bench
 
   class Server < ThreadedServer
 
-    def serve(socket)
-      self.log("Request Received")
+    def initialize(*args)
+      super
+      @mutex = Mutex.new
+      @processing_times = []
+    end
+
+    def serve(client)
+      self.logger.info("Request Received")
       benchmark = Benchmark.measure do
-        received = socket.recvfrom("Test".bytesize).first
-        self.log("  got:     #{received.inspect}")
+        received = client.read("Test".bytesize)
+        self.logger.info("  got:     #{received.inspect}")
         message = "Hello World"
-        self.log("  sending: #{message.inspect}")
-        socket.print(message)
+        self.logger.info("  sending: #{message.inspect}")
+        client.write(message)
       end
       time_taken = ((benchmark.real * 1000.to_f) * TIME_MODIFIER).to_i / TIME_MODIFIER.to_f
-      self.log("Done (#{time_taken}ms)")
+      @mutex.synchronize{ @processing_times << time_taken }
+      self.logger.info("Done (#{time_taken}ms)")
+    end
+
+    def stop
+      super
+      self.logger.info("Server statistics")
+      total_time = @processing_times.inject(0){|s, n| s + n }
+      average_time = total_time / @processing_times.size
+      average_time = (average_time * TIME_MODIFIER).to_i / TIME_MODIFIER.to_f
+      total_time = (total_time * TIME_MODIFIER).to_i / TIME_MODIFIER.to_f
+      self.logger.info("Average Time: #{average_time}ms")
+      self.logger.info("Total Time: #{total_time}ms")
     end
 
   end
