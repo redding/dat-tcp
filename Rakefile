@@ -1,5 +1,8 @@
 require "bundler/gem_tasks"
 
+require "assert/rake_tasks"
+Assert::RakeTasks.install
+
 namespace :bench do
 
   desc "Send test requests to the Benchmark server"

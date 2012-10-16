@@ -10,6 +10,7 @@
 require 'thread'
 
 require 'threaded_server/client_socket'
+require 'threaded_server/logger'
 
 class ThreadedServer
 
@@ -18,7 +19,7 @@ class ThreadedServer
 
     def initialize(max = 1, logger = nil)
       @max = max
-      @logger = logger
+      @logger = logger || ThreadedServer::Logger.new
       @list = []
 
       @mutex = Mutex.new
@@ -39,6 +40,7 @@ class ThreadedServer
     end
 
     def process(connection, &block)
+      self.wait_for_available
       worker_id = self.list.size + 1
       client = ThreadedServer::ClientSocket.new(connection)
       @list << Thread.new{ self.serve_client(worker_id, client, &block) }
@@ -51,6 +53,7 @@ class ThreadedServer
     # shutdown, letting the threads finish their processing.
     def finish
       @mutex.synchronize do
+        @list.reject!{|thread| !thread.alive? }
         while !self.list.empty?
           @condition_variable.wait(@mutex)
         end
@@ -65,8 +68,8 @@ class ThreadedServer
 
     def serve_client(worker_id, client, &block)
       begin
-        host, port = [ client.peeraddr[2], client.peeraddr[1] ]
-        self.log("Connecting #{host}:#{port}", worker_id)
+        Thread.current["client_address"] = client.peeraddr[1, 2].reverse.join(':')
+        self.log("Connecting #{Thread.current["client_address"]}", worker_id)
         block.call(client)
       rescue Exception => exception
         self.log("Exception occurred, stopping worker", worker_id)
@@ -90,7 +93,7 @@ class ThreadedServer
         self.log("#{exception.class}: #{exception.message}", worker_id)
         self.log(exception.backtrace.join("\n"), worker_id)
       end
-      self.log("Disconnecting #{host}:#{port}", worker_id)
+      self.log("Disconnecting #{Thread.current["client_address"]}", worker_id)
     end
 
   end

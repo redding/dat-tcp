@@ -9,18 +9,24 @@ require 'logger'
 class ThreadedServer
 
   class Logger
+    attr_reader :real_logger
 
     def initialize(logger = nil, options = nil)
       options ||= {}
-      @logger = logger || self.default_logger(options[:name]) if options[:logging]
+      @real_logger = logger
+      @real_logger ||= self.default_logger(options[:name]) if !options[:null]
     end
 
     [ :info, :error ].each do |name|
 
       define_method(name) do |message|
-        @logger.send(name, message) if @logger
+        self.real_logger.send(name, message) if self.real_logger
       end
 
+    end
+
+    def self.null_logger
+      self.new(nil, { :null => true })
     end
 
     protected

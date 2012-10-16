@@ -121,11 +121,19 @@ If a logger is not specified, by default, `ThreadedServer` will log to stdout. I
 server = MyServer.new('localhost', 8000, { :logging => false })
 ```
 
+#### Connection Ready Timeout
+
+`ThreadedServer` uses `IO.select` combined with `accept_nonblock` on the TCP server to listen for new connections (see "Advanced - Listening For Connections" section for more details and reasoning). `IO.select` takes a timeout which can be customized by passing `ready_timeout` when creating a new server. This throttles how spastic the server is when waiting for a new connection, but also limits how responsive the server is when told to stop:
+
+```ruby
+server = MyServer.new('localhost', 8000, { :ready_timeout => 0 }) # or, no timeout
+```
+
+Again, see the "Advanced - Listening For Connections" for a more in-depth explanation.
+
 ## Advanced
 
 ### Server Thread
-
-**TODO** Make sure that the server in a separate thread will actually work with testing, otherwise don't say that (should work)
 
 `ThreadedServer` uses a separate thread to run the TCP server in. This allows for better control over the server and is also convenient for running tests against the server. Also, the server thread can also be joined into the current thread, which is essentially the same as not running the server in a thread.
 
@@ -144,3 +152,24 @@ end
 ```
 
 The server keeps track of the thread so that it can check the thread's status and join the thread.
+
+### Listening For Connections
+
+`ThreadedServer` listens for connections by using a combination of `IO.select` and socket's `accept_nonblock`. When the server is started, it creates a `TCPServer` instance and calls `accept_nonblock`. Assuming there isn't a client socket that has connected, this throws an exception. The exception is caught and then `ThreadedServer` uses `IO.select` with a timeout to wait for a new connection. Once there is a connection or the timeout expires, the `accept_nonblock` is retried and the process begins again. This looks something like:
+
+```ruby
+begin
+  tcp_server.accept_nonblock
+rescue NoConnectionException
+  IO.select([ tcp_server ], nil, nil, ready_timeout)
+  retry
+end
+```
+
+`ThreadedServer` does this for a couple of reasons:
+
+1. Using `accept_nonblock` and retrying it, allows the server to be responsive, particularly when it is stopped. With this loop, a check to see if the server has been stopped can be performed and then the retry-loop can be exited. Using `accept`, instead of `accept_nonblock`, blocks the process which makes it unresponsive.
+
+2. Using a timeout with `IO.select` allows the server thread to be less instense about running `accept_nonblock`. The server doesn't need to be continously running `accept_nonblock`, erroring and retrying. `IO.select` allows it to pause and let other threads run.
+
+The `IO.select` timeout should be balanced, the higher it's set controls how often the connection loop unnecessarily runs, but also makes the server less responsive to being shutdown. In general, the timeout is how long it will take for the server to detect it's been stopped and complete shutting down.

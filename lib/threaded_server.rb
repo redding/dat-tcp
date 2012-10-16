@@ -9,14 +9,18 @@
 # 2. Process connection by handing off to worker
 #
 # Options:
-#   `max_workers` - (integer) The maximum number of workers for processing
-#                   connections. More threads causes more concurrency but also
-#                   more overhead. This defaults to 4 workers.
-#   `logging`     - (boolean) Whether the server should log processing messages.
-#                   These are normally when started, stopped and when a new
-#                   connection occurs. Defaults to true.
-#   `logger`      - (logger) The logger to use when logging messages. Defaults
-#                   to an instance of ruby's logger class.
+#   `max_workers`   - (integer) The maximum number of workers for processing
+#                     connections. More threads causes more concurrency but also
+#                     more overhead. This defaults to 4 workers.
+#   `logging`       - (boolean) Whether the server should log processing
+#                     messages. These are normally when started, stopped and
+#                     when a new connection occurs. Defaults to true.
+#   `logger`        - (logger) The logger to use when logging messages. The
+#                     logger should respond to methods like ruby's logger.
+#                     Defaults to an instance of ruby's logger class.
+#   `ready_timeout` - (float) The timeout used with `IO.select` waiting for a
+#                     connection to occur. This can be set to 0 to not wait at
+#                     all. Defaults to 1 (second).
 #
 require 'socket'
 require 'thread'
@@ -26,21 +30,26 @@ require 'threaded_server/workers'
 require 'threaded_server/version'
 
 class ThreadedServer
-  attr_reader :host, :port, :workers, :logger
-
-  LISTEN_TIMEOUT = 1
+  attr_reader :host, :port, :workers, :logger, :ready_timeout
+  attr_reader :tcp_server, :thread
 
   def initialize(host, port, options = nil)
     options ||= {}
-    @host, @port = [ host, port ]
-    @thread = nil
     options[:max_workers] ||= 4
     options[:logging] = true if !options.has_key?(:logging)
-    @logger = ThreadedServer::Logger.new(options[:logger], {
-      :logging => options[:logging],
-      :name    => self.name
-    })
+    options[:ready_timeout] ||= 1
+
+    @host, @port = [ host, port ]
+    @logger = if options[:logging]
+      ThreadedServer::Logger.new(options[:logger], { :name => self.name })
+    else
+      ThreadedServer::Logger.null_logger
+    end
     @workers = ThreadedServer::Workers.new(options[:max_workers], self.logger)
+    @ready_timeout = options[:ready_timeout]
+
+    @mutex = Mutex.new
+    @condition_variable = ConditionVariable.new
   end
 
   def start
@@ -53,7 +62,16 @@ class ThreadedServer
   end
 
   def stop
-    @shutdown = self.running? ? true : false
+    if self.running?
+      @shutdown = true
+      @mutex.synchronize do
+        while self.thread
+          @condition_variable.wait(@mutex)
+        end
+      end
+    else
+      false
+    end
   end
 
   def join_thread(limit = nil)
@@ -76,7 +94,9 @@ class ThreadedServer
 
   def start_server_thread
     @tcp_server = TCPServer.new(self.host, self.port)
-    @thread = Thread.new{ self.work_loop }
+    @mutex.synchronize do
+      @thread = Thread.new{ self.work_loop }
+    end
   end
 
   # Notes:
@@ -85,14 +105,13 @@ class ThreadedServer
   def work_loop
     self.logger.info("Starting...")
     while !@shutdown
-      self.workers.wait_for_available
       connection = self.accept_connection
       self.workers.process(connection){|client| self.serve(client) } if connection
     end
   rescue Exception => exception
     self.logger.info("Exception occurred, stopping server!")
   ensure
-    self.shutdown_server(exception)
+    self.shutdown_server_thread(exception)
   end
 
   # This method is a retry-loop waiting for a new connection. If a connection is
@@ -111,24 +130,28 @@ class ThreadedServer
     return if @shutdown
     @tcp_server.accept_nonblock
   rescue Errno::EAGAIN, Errno::EWOULDBLOCK, Errno::ECONNABORTED, Errno::EPROTO, Errno::EINTR
-    IO.select([ @tcp_server ], nil, nil, LISTEN_TIMEOUT)
+    IO.select([ @tcp_server ], nil, nil, self.ready_timeout)
     retry
   end
 
   # Notes:
   # * Stopping the workers is a graceful shutdown. It will let them each finish
   #   processing by joining their threads.
-  def shutdown_server(exception)
+  def shutdown_server_thread(exception = nil)
     self.logger.info("Stopping...")
     @tcp_server.close rescue false
     self.logger.info("  letting any running workers finish...")
     self.workers.finish
-    @thread = nil
     self.logger.info("Stopped")
     if exception
       self.logger.error("#{exception.class}: #{exception.message}")
       self.logger.error(exception.backtrace.join("\n"))
     end
+    @mutex.synchronize do
+      @thread = nil
+      @condition_variable.signal
+    end
+    true
   end
 
 end
