@@ -1,5 +1,5 @@
 require 'benchmark'
-require 'threaded_server'
+require 'dat-tcp'
 
 module Bench
 
@@ -17,7 +17,7 @@ module Bench
     server = Bench::Server.new(host, port)
     [ "QUIT", "INT", "TERM" ].each do |name|
       Signal.trap(name) do
-        puts "signal received, allow #{ThreadedServer::LISTEN_TIMEOUT} second(s) for server to stop"
+        puts "signal received, allow #{DatTCP::LISTEN_TIMEOUT} second(s) for server to stop"
         server.stop
       end
     end
@@ -31,7 +31,8 @@ module Bench
     Process.kill("QUIT", pid)
   end
 
-  class Server < ThreadedServer
+  class Server
+    include DatTCP::Server
 
     def initialize(*args)
       super

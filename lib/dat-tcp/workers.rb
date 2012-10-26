@@ -1,4 +1,4 @@
-# Threaded server workers is a class for managing the worker threads that are
+# DatTCP's workers is a class for managing the worker threads that are
 # spun up to handle clients. It manages a list of working threads and provides
 # external methods for working with them. Working threads are managed by
 # creating a new one when `process` is called. A client connection and a block
@@ -9,17 +9,17 @@
 #
 require 'thread'
 
-require 'threaded_server/client_socket'
-require 'threaded_server/logger'
+require 'dat-tcp/client_socket'
+require 'dat-tcp/logger'
 
-class ThreadedServer
+module DatTCP
 
   class Workers
     attr_reader :max, :list, :logger
 
     def initialize(max = 1, logger = nil)
       @max = max
-      @logger = logger || ThreadedServer::Logger.new
+      @logger = logger || DatTCP::Logger.new
       @list = []
 
       @mutex = Mutex.new
@@ -42,7 +42,7 @@ class ThreadedServer
     def process(connection, &block)
       self.wait_for_available
       worker_id = self.list.size + 1
-      client = ThreadedServer::ClientSocket.new(connection)
+      client = DatTCP::ClientSocket.new(connection)
       @list << Thread.new{ self.serve_client(worker_id, client, &block) }
     end
 

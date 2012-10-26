@@ -1,15 +1,18 @@
 # -*- encoding: utf-8 -*-
 lib = File.expand_path('../lib', __FILE__)
 $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
-require 'threaded_server/version'
+require 'dat-tcp/version'
 
 Gem::Specification.new do |gem|
-  gem.name          = "threaded_server"
-  gem.version       = ThreadedServer::VERSION
+  gem.name          = "dat-tcp"
+  gem.version       = DatTCP::VERSION
   gem.authors       = ["Collin Redding"]
   gem.email         = ["collin.redding@me.com"]
-  gem.description   = "TODO"
-  gem.summary       = "TODO"
+  gem.description   = "DatTCP is a generic threaded TCP server implementation. It provides a " \
+                      "simple to use interface for defining a TCP server. It is intended to be " \
+                      "used as a base for application-level servers."
+  gem.summary       = "DatTCP is a generic threaded TCP server for defining application-level " \
+                      "servers."
   gem.homepage      = ""
 
   gem.files         = `git ls-files -- lib/* Gemfile Rakefile *.gemspec`.split($/)

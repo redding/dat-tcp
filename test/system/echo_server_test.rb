@@ -1,10 +1,11 @@
-# The intent of this test is to be sure the threaded server can be used as
-# intended. That is, that a custom server can be defined, started, stopped and
-# will respond as expected.
+# The intent of this test is to be sure the dat-tcp can be used as intended.
+# That is, that a custom server can be defined, started, stopped and will
+# respond as expected.
 #
 require 'assert'
 
-class EchoServer < ThreadedServer
+class EchoServer
+  include DatTCP::Server
 
   def serve(client)
     socket = client.socket

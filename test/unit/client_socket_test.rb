@@ -1,12 +1,12 @@
 require 'assert'
 
-class ThreadedServer::ClientSocket
+class DatTCP::ClientSocket
 
   class BaseTest < Assert::Context
-    desc "ThreadedServer::ClientSocket"
+    desc "DatTCP::ClientSocket"
     setup do
       @socket = mock()
-      @client = ThreadedServer::ClientSocket.new(@socket)
+      @client = DatTCP::ClientSocket.new(@socket)
     end
     subject{ @client }
 

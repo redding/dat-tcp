@@ -1,11 +1,14 @@
 require 'assert'
 
-class ThreadedServer
+module DatTCP
 
   class BaseTest < Assert::Context
-    desc "ThreadedServer"
+    desc "DatTCP"
     setup do
-      @server = ThreadedServer.new('localhost', 8000, {
+      @server_class = Class.new do
+        include DatTCP::Server
+      end
+      @server = @server_class.new('localhost', 8000, {
         :logging => false,
         :ready_timeout => 0
       })
@@ -15,11 +18,11 @@ class ThreadedServer
     should have_instance_methods :host, :port, :workers, :logger, :tcp_server, :thread,
       :start, :stop, :join_thread, :running?, :serve, :name, :ready_timeout
 
-    should "return an instance of ThreadedServer::Workers with #workers" do
-      assert_instance_of ThreadedServer::Workers, subject.workers
+    should "return an instance of DatTCP::Workers with #workers" do
+      assert_instance_of DatTCP::Workers, subject.workers
     end
-    should "return an instance of ThreadedServer::Logger with #logger" do
-      assert_instance_of ThreadedServer::Logger, subject.logger
+    should "return an instance of DatTCP::Logger with #logger" do
+      assert_instance_of DatTCP::Logger, subject.logger
     end
     should "return nil with #tcp_server and #thread" do
       assert_nil subject.tcp_server

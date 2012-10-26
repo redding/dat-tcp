@@ -1,8 +1,8 @@
-# Threaded server's client socket is a light wrapper to a socket. It provides
+# DatTCP's client socket is a light wrapper to a socket. It provides
 # some convenience methods for working with sockets but proxies most of it's
 # methods to the socket.
 #
-class ThreadedServer
+module DatTCP
 
   class ClientSocket
     attr_reader :socket

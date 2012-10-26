@@ -1,12 +1,12 @@
 require 'assert'
 
-class ThreadedServer::Logger
+class DatTCP::Logger
 
   class BaseTest < Assert::Context
-    desc "ThreadedServer::Logger"
+    desc "DatTCP::Logger"
     setup do
       @spy_logger = SpyLogger.new
-      @logger = ThreadedServer::Logger.new
+      @logger = DatTCP::Logger.new
     end
     subject{ @logger }
 
@@ -16,7 +16,7 @@ class ThreadedServer::Logger
   class NullLoggerTest < BaseTest
     desc "null_logger"
     setup do
-      @logger = ThreadedServer::Logger.null_logger
+      @logger = DatTCP::Logger.null_logger
     end
 
     should "return nil with #real_logger" do
@@ -33,7 +33,7 @@ class ThreadedServer::Logger
   class PassedLoggerTest < BaseTest
     desc "with passed logger"
     setup do
-      @logger = ThreadedServer::Logger.new(@spy_logger)
+      @logger = DatTCP::Logger.new(@spy_logger)
     end
 
     should "return the fake logger with #real_logger" do
@@ -51,7 +51,7 @@ class ThreadedServer::Logger
   class DefaultLoggerTest < BaseTest
     desc "building a default logger"
     setup do
-      @logger = ThreadedServer::Logger.new(nil)
+      @logger = DatTCP::Logger.new(nil)
     end
 
     should "return an instance of ruby's Logger with #real_logger" do

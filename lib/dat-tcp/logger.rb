@@ -6,7 +6,7 @@
 #
 require 'logger'
 
-class ThreadedServer
+module DatTCP
 
   class Logger
     attr_reader :real_logger
@@ -31,7 +31,7 @@ class ThreadedServer
 
     protected
 
-    def default_logger(name = "ThreadedServer")
+    def default_logger(name = "DatTCP")
       ::Logger.new(STDOUT).tap do |logger|
         logger.progname = "[#{name}]"
         logger.datetime_format = "%m/%d/%Y %H:%M:%S%p "

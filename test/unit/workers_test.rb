@@ -2,12 +2,12 @@ require 'assert'
 
 require 'benchmark'
 
-class ThreadedServer::Workers
+class DatTCP::Workers
 
   class BaseTest < Assert::Context
-    desc "ThreadedServer::Workers"
+    desc "DatTCP::Workers"
     setup do
-      @workers = ThreadedServer::Workers.new(1, ThreadedServer::Logger.null_logger)
+      @workers = DatTCP::Workers.new(1, DatTCP::Logger.null_logger)
     end
     subject{ @workers }
 

@@ -1,6 +1,6 @@
 require 'socket'
 
-require 'threaded_server'
+require 'dat-tcp'
 
 require 'test/support/fake_socket'
 require 'test/support/spy_logger'
