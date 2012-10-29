@@ -19,7 +19,7 @@ module DatTCP
 
     def initialize(max = 1, logger = nil)
       @max = max
-      @logger = logger || DatTCP::Logger.new
+      @logger = logger || DatTCP::Logger::Null.new
       @list = []
 
       @mutex = Mutex.new

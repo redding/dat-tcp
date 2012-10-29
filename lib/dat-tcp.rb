@@ -13,16 +13,14 @@
 #   `max_workers`   - (integer) The maximum number of workers for processing
 #                     connections. More threads causes more concurrency but also
 #                     more overhead. This defaults to 4 workers.
-#   `logging`       - (boolean) Whether the server should log processing
-#                     messages. These are normally when started, stopped and
-#                     when a new connection occurs. Defaults to true.
-#   `logger`        - (logger) The logger to use when logging messages. The
-#                     logger should respond to methods like ruby's logger.
-#                     Defaults to an instance of ruby's logger class.
+#   `debug`         - (boolean) Whether or not to have the server log debug
+#                     messages for when the server starts and stops and when a
+#                     client connects and disconnects.
 #   `ready_timeout` - (float) The timeout used with `IO.select` waiting for a
 #                     connection to occur. This can be set to 0 to not wait at
 #                     all. Defaults to 1 (second).
 #
+require 'logger'
 require 'socket'
 require 'thread'
 
@@ -33,23 +31,17 @@ require 'dat-tcp/version'
 module DatTCP
 
   module Server
-    attr_reader :host, :port, :workers, :logger, :ready_timeout
+    attr_reader :host, :port, :workers, :debug, :logger, :ready_timeout
     attr_reader :tcp_server, :thread
 
     def initialize(host, port, options = nil)
       options ||= {}
       options[:max_workers] ||= 4
-      options[:logging] = true if !options.has_key?(:logging)
-      options[:ready_timeout] ||= 1
 
       @host, @port = [ host, port ]
-      @logger = if options[:logging]
-        DatTCP::Logger.new(options[:logger], { :name => self.name })
-      else
-        DatTCP::Logger.null_logger
-      end
+      @logger = DatTCP::Logger.new(options[:debug])
       @workers = DatTCP::Workers.new(options[:max_workers], self.logger)
-      @ready_timeout = options[:ready_timeout]
+      @ready_timeout = options[:ready_timeout] || 1
 
       @mutex = Mutex.new
       @condition_variable = ConditionVariable.new
@@ -158,4 +150,5 @@ module DatTCP
     end
 
   end
+
 end

@@ -7,7 +7,7 @@ class DatTCP::Workers
   class BaseTest < Assert::Context
     desc "DatTCP::Workers"
     setup do
-      @workers = DatTCP::Workers.new(1, DatTCP::Logger.null_logger)
+      @workers = DatTCP::Workers.new(1)
     end
     subject{ @workers }
 

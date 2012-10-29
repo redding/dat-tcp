@@ -9,7 +9,6 @@ module DatTCP
         include DatTCP::Server
       end
       @server = @server_class.new('localhost', 8000, {
-        :logging => false,
         :ready_timeout => 0
       })
     end
@@ -21,8 +20,8 @@ module DatTCP
     should "return an instance of DatTCP::Workers with #workers" do
       assert_instance_of DatTCP::Workers, subject.workers
     end
-    should "return an instance of DatTCP::Logger with #logger" do
-      assert_instance_of DatTCP::Logger, subject.logger
+    should "return an instance of DatTCP::Logger::Null with #logger" do
+      assert_instance_of DatTCP::Logger::Null, subject.logger
     end
     should "return nil with #tcp_server and #thread" do
       assert_nil subject.tcp_server

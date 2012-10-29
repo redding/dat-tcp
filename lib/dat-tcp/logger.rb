@@ -1,41 +1,34 @@
-# Threaded server's logger class is a wrapper that provides a consistent
-# interface for the rest of the gem. Even if logging is turned off, this becomes
-# a null logger, just consuming any messages that would be logged. It also
-# builds a default logger using ruby's standard logger and configures it
-# slightly.
+# DatTCP's logger module acts as a generator for either a debug or null logger.
+# This allows the server and workers to always assume they have some logger
+# object and not have to worry about conditionally checking if a logger is
+# present. The null logger takes all messages and does nothing with them. When
+# debug mode is turned off, this logger is used, which keeps the server from
+# logging. The debug logger uses an instance of ruby's standard logger and
+# writes to STDOUT.
 #
 require 'logger'
 
-module DatTCP
+module DatTCP::Logger
 
-  class Logger
-    attr_reader :real_logger
+  def self.new(debug)
+     !!debug ? DatTCP::Logger::Debug.new : DatTCP::Logger::Null.new
+  end
 
-    def initialize(logger = nil, options = nil)
-      options ||= {}
-      @real_logger = logger
-      @real_logger ||= self.default_logger(options[:name]) if !options[:null]
-    end
+  module Debug
 
-    [ :info, :error ].each do |name|
-
-      define_method(name) do |message|
-        self.real_logger.send(name, message) if self.real_logger
-      end
-
-    end
-
-    def self.null_logger
-      self.new(nil, { :null => true })
-    end
-
-    protected
-
-    def default_logger(name = "DatTCP")
+    def self.new
       ::Logger.new(STDOUT).tap do |logger|
-        logger.progname = "[#{name}]"
+        logger.progname = "[#{self.name}]"
         logger.datetime_format = "%m/%d/%Y %H:%M:%S%p "
       end
+    end
+
+  end
+
+  class Null
+
+    Logger::Severity.constants.each do |name|
+      define_method(name.downcase){|*args| } # no-op
     end
 
   end

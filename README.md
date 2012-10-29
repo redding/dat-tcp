@@ -41,7 +41,7 @@ Once this is done, the server thread will take over, which will put the process 
 
 ### Processing Connections
 
-`DatTCP` provides a wrapper to the connecting TCP socket and passes it to the `serve` method. It provides some helpers for reading and writing to the client, but in general proxies most of it's methods to the actual ruby `TCPSocket`. The 2 primary methods it provides are `read` and `write`:
+DatTCP provides a wrapper to the connecting TCP socket and passes it to the `serve` method. It provides some helpers for reading and writing to the client, but in general proxies most of it's methods to the actual ruby `TCPSocket`. The 2 primary methods it provides are `read` and `write`:
 
 ```ruby
 # a possible `serve` method
@@ -108,23 +108,19 @@ server = MyServer.new('localhost', 8000, { :max_workers => 10 })
 
 Then, when the server is started, it will allow up to 10 worker threads for processing connections.
 
-#### Logging
+#### Debug
 
-`DatTCP` has logging built in for when it starts or stops, when a client connects or disconnects and when an error occurs. To provide custom logging, a logger can be passed when creating the server:
-
-```ruby
-server = MyServer.new('localhost', 8000, { :logger => my_logger })
-```
-
-If a logger is not specified, by default, `DatTCP` will log to stdout. If you wish to turn logging off, this can be done by setting `logging` to false:
+DatTCP has a debug mode built in. When turned on, it logs when it starts or stops, when a client connects or disconnects and when an error occurs. It's off by default, to turn it on, set `debug` to `true`:
 
 ```ruby
-server = MyServer.new('localhost', 8000, { :logging => false })
+server = MyServer.new('localhost', 8000, { :debug => true })
 ```
+
+When turned on, DatTCP will log it's debug messages to STDOUT.
 
 #### Connection Ready Timeout
 
-`DatTCP` uses `IO.select` combined with `accept_nonblock` on the TCP server to listen for new connections (see "Advanced - Listening For Connections" section for more details and reasoning). `IO.select` takes a timeout which can be customized by passing `ready_timeout` when creating a new server. This throttles how spastic the server is when waiting for a new connection, but also limits how responsive the server is when told to stop:
+DatTCP uses `IO.select` combined with `accept_nonblock` on the TCP server to listen for new connections (see "Advanced - Listening For Connections" section for more details and reasoning). `IO.select` takes a timeout which can be customized by passing `ready_timeout` when creating a new server. This throttles how spastic the server is when waiting for a new connection, but also limits how responsive the server is when told to stop:
 
 ```ruby
 server = MyServer.new('localhost', 8000, { :ready_timeout => 0 }) # or, no timeout
@@ -136,7 +132,7 @@ Again, see the "Advanced - Listening For Connections" for a more in-depth explan
 
 ### Server Thread
 
-`DatTCP` uses a separate thread to run the TCP server in. This allows for better control over the server and is also convenient for running tests against the server. Also, the server thread can also be joined into the current thread, which is essentially the same as not running the server in a thread.
+DatTCP uses a separate thread to run the TCP server in. This allows for better control over the server and is also convenient for running tests against the server. Also, the server thread can also be joined into the current thread, which is essentially the same as not running the server in a thread.
 
 To manage this, whenever the server is started, it creates a new thread and starts the TCP server loop in it:
 
@@ -156,7 +152,7 @@ The server keeps track of the thread so that it can check the thread's status an
 
 ### Listening For Connections
 
-`DatTCP` listens for connections by using a combination of `IO.select` and socket's `accept_nonblock`. When the server is started, it creates a `TCPServer` instance and calls `accept_nonblock`. Assuming there isn't a client socket that has connected, this throws an exception. The exception is caught and then `DatTCP` uses `IO.select` with a timeout to wait for a new connection. Once there is a connection or the timeout expires, the `accept_nonblock` is retried and the process begins again. This looks something like:
+DatTCP listens for connections by using a combination of `IO.select` and socket's `accept_nonblock`. When the server is started, it creates a `TCPServer` instance and calls `accept_nonblock`. Assuming there isn't a client socket that has connected, this throws an exception. The exception is caught and then DatTCP uses `IO.select` with a timeout to wait for a new connection. Once there is a connection or the timeout expires, the `accept_nonblock` is retried and the process begins again. This looks something like:
 
 ```ruby
 begin
@@ -167,7 +163,7 @@ rescue NoConnectionException
 end
 ```
 
-`DatTCP` does this for a couple of reasons:
+DatTCP does this for a couple of reasons:
 
 1. Using `accept_nonblock` and retrying it, allows the server to be responsive, particularly when it is stopped. With this loop, a check to see if the server has been stopped can be performed and then the retry-loop can be exited. Using `accept`, instead of `accept_nonblock`, blocks the process which makes it unresponsive.
 
