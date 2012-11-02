@@ -85,6 +85,11 @@ module DatTCP
       "#{self.class}|#{self.host}:#{self.port}"
     end
 
+    def inspect
+      reference = '0x0%x' % (self.object_id << 1)
+      "#<#{self.class}:#{reference} @host=#{self.host.inspect} @port=#{self.port.inspect}>"
+    end
+
     protected
 
     def start_server_thread
