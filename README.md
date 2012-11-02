@@ -175,21 +175,16 @@ The server keeps track of the thread so that it can check the thread's status an
 
 ### Listening For Connections
 
-DatTCP listens for connections by using a combination of `IO.select` and socket's `accept_nonblock`. When the server is started, it creates a `TCPServer` instance and calls `accept_nonblock`. Assuming there isn't a client socket that has connected, this throws an exception. The exception is caught and then DatTCP uses `IO.select` with a timeout to wait for a new connection. Once there is a connection or the timeout expires, the `accept_nonblock` is retried and the process begins again. This looks something like:
+DatTCP listens for connections by using a combination of `IO.select` and socket's `accept`. When the server is started, it creates a TCP socket instance and calls `IO.select` with a timeout. This will return if a client connects or after the timeout has expired. If a client connected, the server will then call `accept` on the TCP socket. At this point, the accept-loop is broken out of and the client socket from `accept` is returned. In the case there isn't a connection after the `IO.select` timeout, the loop starts over. Also during this loop, the server checks to see if it's been stopped. If so, the loop is also broken out of. The code for this looks something like:
 
 ```ruby
-begin
-  tcp_server.accept_nonblock
-rescue NoConnectionException
-  IO.select([ tcp_server ], nil, nil, ready_timeout)
-  retry
+loop do
+  if IO.select([ server_socket ], nil nil, timeout)
+    return server_socket.accept
+  elsif shutdown?
+    return
+  end
 end
 ```
 
-DatTCP does this for a couple of reasons:
-
-1. Using `accept_nonblock` and retrying it, allows the server to be responsive, particularly when it is stopped. With this loop, a check to see if the server has been stopped can be performed and then the retry-loop can be exited. Using `accept`, instead of `accept_nonblock`, blocks the process which makes it unresponsive.
-
-2. Using a timeout with `IO.select` allows the server thread to be less instense about running `accept_nonblock`. The server doesn't need to be continously running `accept_nonblock`, erroring and retrying. `IO.select` allows it to pause and let other threads run.
-
-The `IO.select` timeout should be balanced, the higher it's set controls how often the connection loop unnecessarily runs, but also makes the server less responsive to being shutdown. In general, the timeout is how long it will take for the server to detect it's been stopped and complete shutting down.
+DatTCP uses `IO.select` because the `accept` call blocks, which causes the process to become unresponsive, in the case you want to stop or restart it. Using `IO.select` before calling `accept` allows the server to be responsive because it only waits for a known timeout.

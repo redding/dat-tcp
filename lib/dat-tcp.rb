@@ -114,24 +114,23 @@ module DatTCP
       self.shutdown_server_thread(exception)
     end
 
-    # This method is a retry-loop waiting for a new connection. If a connection is
-    # not ready, `accept_nonblock` will raise an exception (`Errno::EWOULDBLOCK`)
-    # instead of blocking (`accept` will block waiting for an exception). When an
-    # exception occurs, we use `IO.select` with a small timeout. This will either
-    # return when the connection is 'ready' (i.e. there is a new connection), or
-    # when the timeout runs out. At this point, we loop by retrying accepting
-    # a connection. If `IO.select` returned because the connection was ready, then
-    # `accept_nonblock` will pick up the connection and return it. Otherwise, the
-    # loop continues.
+    # This method is a accept-loop waiting for a new connection. It uses
+    # `IO.select` with a timeout to wait for a socket to be ready. Once the
+    # socket is ready, it calls `accept` and returns the connection. If the
+    # server socket doesn't have a new connection waiting, the loop starts over.
+    # In the case the server has been shutdown, it will also break out of the
+    # loop.
     #
     # Notes:
-    # * If the server has been shutdown this will return `nil` always.
+    # * If the server has been shutdown this will return `nil`.
     def accept_connection
-      return if @shutdown
-      @tcp_server.accept_nonblock
-    rescue Errno::EAGAIN, Errno::EWOULDBLOCK, Errno::ECONNABORTED, Errno::EPROTO, Errno::EINTR
-      IO.select([ @tcp_server ], nil, nil, self.ready_timeout)
-      retry
+      loop do
+        if IO.select([ @tcp_server ], nil, nil, self.ready_timeout)
+          return @tcp_server.accept
+        elsif @shutdown
+          return
+        end
+      end
     end
 
     # Notes:
