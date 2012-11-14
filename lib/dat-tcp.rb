@@ -24,6 +24,8 @@ require 'logger'
 require 'socket'
 require 'thread'
 
+module DatTCP; end
+
 require 'dat-tcp/logger'
 require 'dat-tcp/workers'
 require 'dat-tcp/version'
