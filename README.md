@@ -41,29 +41,19 @@ Once this is done, the server thread will take over, which will put the process 
 
 ### Processing Connections
 
-DatTCP provides a wrapper to the connecting TCP socket and passes it to the `serve` method. It provides some helpers for reading and writing to the client, but in general proxies most of it's methods to the actual ruby `TCPSocket`. The 2 primary methods it provides are `read` and `write`:
+To handle a client connection, you define the `serve` method on your server. It will be passed an instance of `TCPSocket` which is the connecting socket of some client. The socket can be read from and written to, and this will communicate with the client:
 
 ```ruby
 # a possible `serve` method
 def serve(client)
   # read the size of the message, expected in the first 4 bytes
-  serialized_size = client.read(4)
+  serialized_size = client.recvfrom(4).first
   size = serialized_size.unpack('N').first
-  message = client.read(size)
+  message = client.recvfrom(size).first
   # do some processing to generate a response
   response_size = response_message.bytesize
   serialized_size = [ response_size ].pack('N')
-  client.write(serialized_size + response_message)
-end
-```
-
-The `read` and `write` methods provide a clean interface for interacting with the client. In the case you want, you can always access the `TCPSocket` directly using the `socket` method:
-
-```ruby
-def serve(client)
-  # get the socket directly
-  socket = client.socket
-  # handle the connection using `socket`
+  client.send(serialized_size + response_message, 0)
 end
 ```
 

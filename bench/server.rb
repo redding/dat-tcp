@@ -14,9 +14,8 @@ module Bench
       @processing_times = []
     end
 
-    def serve(client_socket)
+    def serve(socket)
       benchmark = Benchmark.measure do
-        socket = client_socket.socket
         socket.write(socket.read)
       end
       @times_mutex.synchronize{ @processing_times << benchmark.real }

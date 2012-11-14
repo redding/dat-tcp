@@ -2,9 +2,9 @@ Running benchmark report...
 
 Making 10000 request(s):
 ....................................................................................................
-Total Time:   6994.2223ms
-Average Time:    0.6994ms
-Min Time:        0.4708ms
-Max Time:       47.2600ms
+Total Time:   6441.3947ms
+Average Time:    0.6441ms
+Min Time:        0.4880ms
+Max Time:       47.0080ms
 
 Done running benchmark report

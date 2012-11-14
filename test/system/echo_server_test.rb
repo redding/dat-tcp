@@ -7,10 +7,9 @@ require 'assert'
 class EchoServer
   include DatTCP::Server
 
-  def serve(client)
-    socket = client.socket
+  def serve(socket)
     message = socket.gets
-    socket.write(message)
+    socket.send(message, 0)
   end
 
 end

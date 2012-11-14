@@ -9,7 +9,6 @@
 #
 require 'thread'
 
-require 'dat-tcp/client_socket'
 require 'dat-tcp/logger'
 
 module DatTCP
@@ -39,11 +38,10 @@ module DatTCP
       end
     end
 
-    def process(connection, &block)
+    def process(connecting_socket, &block)
       self.wait_for_available
       worker_id = self.list.size + 1
-      client = DatTCP::ClientSocket.new(connection)
-      @list << Thread.new{ self.serve_client(worker_id, client, &block) }
+      @list << Thread.new{ self.serve_client(worker_id, connecting_socket, &block) }
     end
 
     # Finish simply sleeps the current thread until signaled. Again, when a
@@ -66,15 +64,15 @@ module DatTCP
       self.logger.info("[Worker##{worker_id}] #{message}") if self.logger
     end
 
-    def serve_client(worker_id, client, &block)
+    def serve_client(worker_id, connecting_socket, &block)
       begin
-        Thread.current["client_address"] = client.peeraddr[1, 2].reverse.join(':')
+        Thread.current["client_address"] = connecting_socket.peeraddr[1, 2].reverse.join(':')
         self.log("Connecting #{Thread.current["client_address"]}", worker_id)
-        block.call(client)
+        block.call(connecting_socket)
       rescue Exception => exception
         self.log("Exception occurred, stopping worker", worker_id)
       ensure
-        self.disconnect_client(worker_id, client, exception)
+        self.disconnect_client(worker_id, connecting_socket, exception)
       end
     end
 
@@ -83,8 +81,8 @@ module DatTCP
     # synchronize, to ensure only one thread interacts with list at a time. Also
     # the condition variable is signaled to trigger the `finish` or
     # `wait_for_available` methods.
-    def disconnect_client(worker_id, client, exception)
-      client.close rescue false
+    def disconnect_client(worker_id, connecting_socket, exception)
+      connecting_socket.close rescue false
       @mutex.synchronize do
         @list.delete(Thread.current)
         @condition_variable.signal

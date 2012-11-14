@@ -32,7 +32,7 @@ class DatTCP::Workers
     desc "process"
     setup do
       @client = FakeSocket.new
-      @workers.process(@client){|client| client.write('poop') }
+      @workers.process(@client){|socket| socket.print('poop') }
     end
 
     should "add a thread to the workers list" do

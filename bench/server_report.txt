@@ -1,6 +1,6 @@
 Server statistics
-  Total Time:     0.6207ms
+  Total Time:     0.5127ms
   Average Time:   0.0000ms
   Min Time:       0.0000ms
-  Max Time:       0.0429ms
+  Max Time:       0.0009ms
 
