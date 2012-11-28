@@ -4,47 +4,41 @@
 #
 require 'assert'
 
-class EchoServer
-  include DatTCP::Server
-
-  def serve(socket)
-    message = socket.gets
-    socket.send(message, 0)
-  end
-
-end
-
-# Notes:
-# * We start the echo server at the beginning of all the tests and stop it after
-#   all the tests have run, this keeps the server from having to be started and
-#   stopped for every test.
 class EchoServerTest < Assert::Context
+  include EchoServer::Helpers
+
   desc "defining a custom Echo Server"
-  setup_once do
-    ECHO_SERVER = EchoServer.new('localhost', 12000, {
+  setup do
+    @server = EchoServer.new('localhost', 12000, {
       :logging => false,
       :ready_timeout => 0
     })
-    ECHO_SERVER.start
   end
-  teardown_once do
-    ECHO_SERVER.stop
-  end
-  subject{ ECHO_SERVER }
 
   should "have started a separate thread for running the server" do
-    assert_instance_of Thread, subject.thread
-    assert subject.thread.alive?
+    @server.start
+
+    assert_instance_of Thread, @server.thread
+    assert @server.thread.alive?
+
+    @server.stop
   end
   should "be able to connect, send messages and have them echoed back" do
-    message = 'Test'
-    client = TCPSocket.open('localhost', 12000)
-    client.puts(message)
+    self.start_server(@server) do
+      begin
+        client = nil
+        assert_nothing_raised do
+          client = TCPSocket.open('localhost', 12000)
+        end
 
-    response = client.gets if IO.select([ client ], nil, nil, 1)
-    assert_equal "#{message}\n", response
+        client.puts('Test')
+        response = client.gets("\n") if IO.select([ client ], nil, nil, 1)
 
-    client.close
+        assert_equal "Test\n", response
+      ensure
+        client.close rescue false
+      end
+    end
   end
 
 end
