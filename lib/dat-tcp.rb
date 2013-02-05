@@ -41,18 +41,33 @@ module DatTCP
       options[:max_workers] ||= 4
 
       @host, @port = [ host, port ]
-      @logger = DatTCP::Logger.new(options[:debug])
-      @workers = DatTCP::Workers.new(options[:max_workers], self.logger)
+      @logger     = DatTCP::Logger.new(options[:debug])
+      @workers    = DatTCP::Workers.new(options[:max_workers], self.logger)
       @ready_timeout = options[:ready_timeout] || 1
 
-      @mutex = Mutex.new
+      @tcp_server = nil
+      @thread     = nil
+      @shutdown   = nil
+
+      @mutex              = Mutex.new
       @condition_variable = ConditionVariable.new
+    end
+
+    def connect
+      if !self.connected?
+        run_hook 'on_connect'
+        !!connect_tcp_server
+      else
+        false
+      end
     end
 
     def start
       if !self.running?
         @shutdown = false
-        !!self.start_server_thread
+        self.connect
+        run_hook 'on_start'
+        !!start_server_thread
       else
         false
       end
@@ -61,11 +76,8 @@ module DatTCP
     def stop
       if self.running?
         @shutdown = true
-        @mutex.synchronize do
-          while self.thread
-            @condition_variable.wait(@mutex)
-          end
-        end
+        run_hook 'on_stop'
+        !!stop_server_thread
       else
         false
       end
@@ -75,12 +87,27 @@ module DatTCP
       @thread.join(limit) if self.running?
     end
 
+    def connected?
+      !!@tcp_server
+    end
+
     def running?
       !!@thread
     end
 
     # This method should be overwritten to handle new connections
     def serve(socket)
+    end
+
+    # Hooks
+
+    def on_connect
+    end
+
+    def on_start
+    end
+
+    def on_stop
     end
 
     def name
@@ -94,13 +121,6 @@ module DatTCP
 
     protected
 
-    def start_server_thread
-      @tcp_server = TCPServer.new(self.host, self.port)
-      @mutex.synchronize do
-        @thread = Thread.new{ self.work_loop }
-      end
-    end
-
     # Notes:
     # * If the server has been shutdown, then `accept_connection` will return
     #   `nil` always. This will exit the loop and begin shutting down the server.
@@ -113,7 +133,7 @@ module DatTCP
     rescue Exception => exception
       self.logger.info("Exception occurred, stopping server!")
     ensure
-      self.shutdown_server_thread(exception)
+      shutdown_server_thread(exception)
     end
 
     # This method is a accept-loop waiting for a new connection. It uses
@@ -135,6 +155,23 @@ module DatTCP
       end
     end
 
+    def connect_tcp_server
+      @tcp_server = TCPServer.new(self.host, self.port)
+      @tcp_server.listen 1024
+    end
+
+    def start_server_thread
+      @mutex.synchronize do
+        @thread = Thread.new{ work_loop }
+      end
+    end
+
+    def stop_server_thread
+      @mutex.synchronize do
+        while @thread; @condition_variable.wait(@mutex); end
+      end
+    end
+
     # Notes:
     # * Stopping the workers is a graceful shutdown. It will let them each finish
     #   processing by joining their threads.
@@ -153,6 +190,10 @@ module DatTCP
         @condition_variable.signal
       end
       true
+    end
+
+    def run_hook(method)
+      self.send(method)
     end
 
   end
