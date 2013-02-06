@@ -6,7 +6,7 @@ namespace :bench do
 
   desc "Start the Benchmark echo server"
   task :server => :load do
-    Bench::ServerRunner.new.start_server
+    Bench::ServerRunner.new.run_server
   end
 
   desc "Run a Benchmark report against the Benchmark server"

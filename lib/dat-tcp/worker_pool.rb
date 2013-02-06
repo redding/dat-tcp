@@ -1,24 +1,17 @@
-# DatTCP's workers is a class for managing the worker threads that are
-# spun up to handle clients. It manages a list of working threads and provides
-# external methods for working with them. Working threads are managed by
-# creating a new one when `process` is called. A client connection and a block
-# are passed to the worker thread for it to handle the connection. Once it's
-# done handling the thread, the connection is closed and the thread is removed
-# from the list. This iignals some of the other methods that the workers class
-# provides that wait on threads to finish.
-#
 require 'thread'
 
 require 'dat-tcp/logger'
 
 module DatTCP
 
-  class Workers
+  class WorkerPool
     attr_reader :max, :list, :logger
 
-    def initialize(max = 1, logger = nil)
-      @max = max
+    def initialize(max = 1, logger = nil, &serve_client_proc)
+      @max    = max
       @logger = logger || DatTCP::Logger::Null.new
+      @serve_client_proc = serve_client_proc
+
       @list = []
 
       @mutex = Mutex.new
@@ -38,10 +31,11 @@ module DatTCP
       end
     end
 
-    def process(connecting_socket, &block)
+    def process(connecting_socket)
+      return if !connecting_socket
       self.wait_for_available
       worker_id = self.list.size + 1
-      @list << Thread.new{ self.serve_client(worker_id, connecting_socket, &block) }
+      @list << Thread.new{ self.serve_client(worker_id, connecting_socket) }
     end
 
     # Finish simply sleeps the current thread until signaled. Again, when a
@@ -64,11 +58,11 @@ module DatTCP
       self.logger.info("[Worker##{worker_id}] #{message}") if self.logger
     end
 
-    def serve_client(worker_id, connecting_socket, &block)
+    def serve_client(worker_id, connecting_socket)
       begin
         Thread.current["client_address"] = connecting_socket.peeraddr[1, 2].reverse.join(':')
         self.log("Connecting #{Thread.current["client_address"]}", worker_id)
-        block.call(connecting_socket)
+        @serve_client_proc.call(connecting_socket)
       rescue Exception => exception
         self.log("Exception occurred, stopping worker", worker_id)
       ensure
