@@ -103,15 +103,14 @@ module Bench
       super(options)
     end
 
-    def start_server
+    def run_server
       require 'bench/server'
-      args = HOST_AND_PORT.dup.push({ :debug => true })
-      server = Bench::Server.new(*args)
+      host_and_port = HOST_AND_PORT.dup
+      server = Bench::Server.new({ :debug => !!ENV['DEBUG'] })
       [ "QUIT", "INT", "TERM" ].each do |name|
         Signal.trap(name){ server.stop }
       end
-      server.start
-      server.join_thread
+      server.run(*host_and_port).join
       self.write_report(server)
     end
 
