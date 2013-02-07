@@ -1,98 +1,108 @@
-# DatTCP Server module is the main interface for defining a new server. It
-# should be mixed in and provides methods for starting and stopping the main
-# server loop. The `serve` method is intended to be overwritten so users can
-# define handling connections. It's primary loop is:
-#
-# 1. Wait for worker
-# 1. Accept connection
-# 2. Process connection by handing off to worker
-#
-# This is repeated until the server is stopped.
-#
-# Options:
-#   `max_workers`   - (integer) The maximum number of workers for processing
-#                     connections. More threads causes more concurrency but also
-#                     more overhead. This defaults to 4 workers.
-#   `debug`         - (boolean) Whether or not to have the server log debug
-#                     messages for when the server starts and stops and when a
-#                     client connects and disconnects.
-#   `ready_timeout` - (float) The timeout used with `IO.select` waiting for a
-#                     connection to occur. This can be set to 0 to not wait at
-#                     all. Defaults to 1 (second).
-#
-require 'logger'
+require 'ostruct'
 require 'socket'
 require 'thread'
 
 module DatTCP; end
 
 require 'dat-tcp/logger'
-require 'dat-tcp/workers'
+require 'dat-tcp/worker_pool'
 require 'dat-tcp/version'
 
 module DatTCP
 
   module Server
-    attr_reader :host, :port, :workers, :debug, :logger, :ready_timeout
-    attr_reader :tcp_server, :thread
 
-    def initialize(host, port, options = nil)
-      options ||= {}
-      options[:max_workers] ||= 4
+    # Configuration Options:
+    # `backlog_size`  - The number of connections that can be pending. These
+    #                   are connections that haven't been 'accepted'.
+    # `debug`         - Whether or not the server should output debug
+    #                   messages. Otherwise it is silent.
+    # `max_workers`   - The maximum number of threads that the server will
+    #                   spin up to handle connections. If this is reached the
+    #                   server will wait for a thread to become free.
+    # `ready_timeout` - The number of seconds the server will wait for a new
+    #                   connection. This controls the "responsiveness" of the
+    #                   server; how fast it will perform checks, like
+    #                   detecting it's been stopped.
 
-      @host, @port = [ host, port ]
-      @logger     = DatTCP::Logger.new(options[:debug])
-      @workers    = DatTCP::Workers.new(options[:max_workers], self.logger)
-      @ready_timeout = options[:ready_timeout] || 1
+    attr_reader :logger
 
+    def initialize(config = nil)
+      config = OpenStruct.new(config || {})
+      @backlog_size  = config.backlog_size  || 1024
+      @debug         = config.debug         || false
+      @max_workers   = config.max_workers   || 4
+      @ready_timeout = config.ready_timeout || 1
+
+      @logger      = DatTCP::Logger.new(@debug)
+      @worker_pool = DatTCP::WorkerPool.new(@max_workers, @logger) do |socket|
+        self.serve(socket)
+      end
+
+      @tcp_server       = nil
+      @work_loop_thread = nil
+      set_state :stop
+    end
+
+    # Socket Options:
+    # * SOL_SOCKET   - specifies the protocol layer the option applies to.
+    #                  SOL_SOCKET is basic socket options (as opposed to
+    #                  something like IPPROTO_TCP for TCP socket options).
+    # * SO_REUSEADDR - indicates that the rules used in validating addresses
+    #                  supplied in a bind(2) call should allow reuse of local
+    #                  addresses. This will allow us to re-bind to a port if we
+    #                  were shutdown and started right away. This will still
+    #                  throw an "address in use" if a socket is active on the
+    #                  port.
+
+    # TODO - allow creating a TCPServer from a filedescriptor
+    def listen(ip, port)
+      if !self.listening?
+        set_state :listen
+        run_hook 'on_listen'
+        @tcp_server = TCPServer.new(ip, port)
+        @tcp_server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true)
+        # TODO - configure TCPServer hook
+        @tcp_server.listen(@backlog_size)
+      end
+    end
+
+    def run(*args)
+      listen(*args)
+      set_state :run
+      run_hook 'on_run'
+      @work_loop_thread = Thread.new{ work_loop }
+    end
+
+    def pause(wait = true)
+      set_state :pause
+      run_hook 'on_pause'
+      wait_for_shutdown if wait
+    end
+
+    def stop(wait = true)
+      set_state :stop
+      run_hook 'on_stop'
+      wait_for_shutdown if wait
+    end
+
+    def halt(wait = true)
+      set_state :halt
+      run_hook 'on_halt'
+      wait_for_shutdown if wait
+    end
+
+    def stop_listening
+      @tcp_server.close rescue false
       @tcp_server = nil
-      @thread     = nil
-      @shutdown   = nil
-
-      @mutex              = Mutex.new
-      @condition_variable = ConditionVariable.new
     end
 
-    def connect
-      if !self.connected?
-        run_hook 'on_connect'
-        !!connect_tcp_server
-      else
-        false
-      end
-    end
-
-    def start
-      if !self.running?
-        @shutdown = false
-        self.connect
-        run_hook 'on_start'
-        !!start_server_thread
-      else
-        false
-      end
-    end
-
-    def stop
-      if self.running?
-        @shutdown = true
-        run_hook 'on_stop'
-        !!stop_server_thread
-      else
-        false
-      end
-    end
-
-    def join_thread(limit = nil)
-      @thread.join(limit) if self.running?
-    end
-
-    def connected?
+    def listening?
       !!@tcp_server
     end
 
     def running?
-      !!@thread
+      !!@work_loop_thread
     end
 
     # This method should be overwritten to handle new connections
@@ -101,99 +111,102 @@ module DatTCP
 
     # Hooks
 
-    def on_connect
+    def on_listen
     end
 
-    def on_start
+    def on_run
+    end
+
+    def on_pause
     end
 
     def on_stop
     end
 
-    def name
-      "#{self.class}|#{self.host}:#{self.port}"
+    def on_halt
     end
 
     def inspect
       reference = '0x0%x' % (self.object_id << 1)
-      "#<#{self.class}:#{reference} @host=#{self.host.inspect} @port=#{self.port.inspect}>"
+      "#<#{self.class}:#{reference}".tap do |inspect_str|
+        inspect_str << " @state=#{@state.inspect}"
+        if self.listening?
+          port, ip = @tcp_server.addr[1, 2]
+          inspect_str << " @ip=#{ip.inspect} @port=#{port.inspect}"
+        end
+        inspect_str << " @work_loop_status=#{@work_loop_thread.status.inspect}" if self.running?
+        inspect_str << ">"
+      end
     end
 
     protected
 
-    # Notes:
-    # * If the server has been shutdown, then `accept_connection` will return
-    #   `nil` always. This will exit the loop and begin shutting down the server.
     def work_loop
-      self.logger.info("Starting...")
-      while !@shutdown
-        connection = self.accept_connection
-        self.workers.process(connection){|client| self.serve(client) } if connection
+      self.logger.info("Starting work loop...")
+      while @state.run?
+        @worker_pool.process self.accept_connection
       end
+      self.logger.info("Stopping work loop...")
+      graceful_shutdown if !@state.halt?
     rescue Exception => exception
       self.logger.info("Exception occurred, stopping server!")
+      self.logger.error("#{exception.class}: #{exception.message}")
+      self.logger.error(exception.backtrace.join("\n"))
     ensure
-      shutdown_server_thread(exception)
+      close_connection if !@state.pause?
+      clear_thread
+      self.logger.info("Stopped work loop")
     end
 
-    # This method is a accept-loop waiting for a new connection. It uses
-    # `IO.select` with a timeout to wait for a socket to be ready. Once the
-    # socket is ready, it calls `accept` and returns the connection. If the
-    # server socket doesn't have a new connection waiting, the loop starts over.
-    # In the case the server has been shutdown, it will also break out of the
-    # loop.
-    #
-    # Notes:
-    # * If the server has been shutdown this will return `nil`.
+    # An accept-loop waiting for new connections. Will wait for a connection
+    # (up to `ready_timeout`) and accept it. `IO.select` with the timeout
+    # allows the server to be responsive to shutdowns.
     def accept_connection
-      loop do
-        if IO.select([ @tcp_server ], nil, nil, self.ready_timeout)
-          return @tcp_server.accept
-        elsif @shutdown
-          return
-        end
+      while @state.run?
+        return @tcp_server.accept if self.connection_ready?
       end
     end
 
-    def connect_tcp_server
-      @tcp_server = TCPServer.new(self.host, self.port)
-      @tcp_server.listen 1024
+    def connection_ready?
+      !!IO.select([ @tcp_server ], nil, nil, @ready_timeout)
     end
 
-    def start_server_thread
-      @mutex.synchronize do
-        @thread = Thread.new{ work_loop }
-      end
+    def graceful_shutdown
+      self.logger.info("Shutting down worker pool, letting it finish...")
+      @worker_pool.finish
     end
 
-    def stop_server_thread
-      @mutex.synchronize do
-        while @thread; @condition_variable.wait(@mutex); end
-      end
+    def close_connection
+      self.logger.info("Closing TCP server connection...")
+      self.stop_listening
     end
 
-    # Notes:
-    # * Stopping the workers is a graceful shutdown. It will let them each finish
-    #   processing by joining their threads.
-    def shutdown_server_thread(exception = nil)
-      self.logger.info("Stopping...")
-      @tcp_server.close rescue false
-      self.logger.info("  letting any running workers finish...")
-      self.workers.finish
-      self.logger.info("Stopped")
-      if exception
-        self.logger.error("#{exception.class}: #{exception.message}")
-        self.logger.error(exception.backtrace.join("\n"))
-      end
-      @mutex.synchronize do
-        @thread = nil
-        @condition_variable.signal
-      end
-      true
+    def clear_thread
+      @work_loop_thread = nil
+    end
+
+    def wait_for_shutdown
+      @work_loop_thread.join if @work_loop_thread
     end
 
     def run_hook(method)
       self.send(method)
+    end
+
+    def set_state(name)
+      @state = State.new(name)
+    end
+
+    class State < String
+
+      def initialize(value)
+        super value.to_s
+      end
+
+      [ :listen, :run, :stop, :halt, :pause ].each do |name|
+        define_method("#{name}?"){ self.to_sym == name }
+      end
+
     end
 
   end

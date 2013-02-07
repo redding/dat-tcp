@@ -2,12 +2,12 @@ require 'assert'
 
 require 'benchmark'
 
-class DatTCP::Workers
+class DatTCP::WorkerPool
 
   class BaseTest < Assert::Context
-    desc "DatTCP::Workers"
+    desc "DatTCP::WorkerPool"
     setup do
-      @workers = DatTCP::Workers.new(1)
+      @workers = DatTCP::WorkerPool.new(1)
     end
     subject{ @workers }
 
@@ -18,7 +18,8 @@ class DatTCP::Workers
     desc "wait_for_available"
     setup do
       @sleep_time = sleep_time = 0.01
-      @workers.process(FakeSocket.new){|client| sleep(sleep_time) }
+      @workers = DatTCP::WorkerPool.new(1){|client| sleep(sleep_time) }
+      @workers.process(FakeSocket.new)
       @benchmark = Benchmark.measure{ @workers.wait_for_available }
     end
 
@@ -32,7 +33,8 @@ class DatTCP::Workers
     desc "process"
     setup do
       @client = FakeSocket.new
-      @workers.process(@client){|socket| socket.print('poop') }
+      @workers = DatTCP::WorkerPool.new(1){|socket| socket.print('poop') }
+      @workers.process(@client)
     end
 
     should "add a thread to the workers list" do
@@ -49,7 +51,8 @@ class DatTCP::Workers
     desc "finish"
     setup do
       @sleep_time = sleep_time = 0.01
-      @workers.process(FakeSocket.new){|client| sleep(sleep_time) }
+      @workers = DatTCP::WorkerPool.new(1){|client| sleep(sleep_time) }
+      @workers.process(FakeSocket.new)
       @benchmark = Benchmark.measure{ @workers.finish }
     end
 

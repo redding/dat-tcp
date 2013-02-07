@@ -9,32 +9,31 @@ class EchoServerTest < Assert::Context
 
   desc "defining a custom Echo Server"
   setup do
-    @server = EchoServer.new('localhost', 12000, {
-      :logging => false,
-      :ready_timeout => 0
-    })
+    @server = EchoServer.new({ :ready_timeout => 0 })
   end
 
   should "have started a separate thread for running the server" do
-    @server.start
+    thread = @server.run('localhost', 56789)
 
-    assert_instance_of Thread, @server.thread
-    assert @server.thread.alive?
+    assert_instance_of Thread, thread
+    assert thread.alive?
 
     @server.stop
   end
+
   should "be able to connect, send messages and have them echoed back" do
-    self.start_server(@server) do
+    self.start_server(@server, 'localhost', 56789) do
       begin
         client = nil
         assert_nothing_raised do
-          client = TCPSocket.open('localhost', 12000)
+          client = TCPSocket.open('localhost', 56789)
         end
 
-        client.puts('Test')
-        response = client.gets("\n") if IO.select([ client ], nil, nil, 1)
+        client.write('Test')
+        client.close_write
+        response = client.read if IO.select([ client ], nil, nil, 1)
 
-        assert_equal "Test\n", response
+        assert_equal "Test", response
       ensure
         client.close rescue false
       end
