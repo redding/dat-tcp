@@ -5,87 +5,158 @@ require 'dat-tcp/logger'
 module DatTCP
 
   class WorkerPool
-    attr_reader :max, :list, :logger
+    attr_reader :logger, :mutex, :cond, :spawned, :waiting
 
-    def initialize(max = 1, logger = nil, &serve_client_proc)
-      @max    = max
-      @logger = logger || DatTCP::Logger::Null.new
-      @serve_client_proc = serve_client_proc
-
-      @list = []
+    def initialize(min = 0, max = 1, debug = false, &serve_proc)
+      @min_workers = min
+      @max_workers = max
+      @logger      = DatTCP::Logger.new(debug)
+      @serve_proc  = serve_proc
 
       @mutex = Mutex.new
-      @condition_variable = ConditionVariable.new
-    end
+      @cond  = ConditionVariable.new
 
-    # This uses the mutex and condition variable to sleep the current thread
-    # until signaled. When a thread closes down, it signals, causing this thread
-    # to wakeup. This will run the loop again, and as long as a worker is
-    # available, the method will return. Otherwise it will sleep again waiting
-    # to be signaled.
-    def wait_for_available
+      @queue   = []
+      @spawned = 0
+      @waiting = 0
+      @workers = []
+
       @mutex.synchronize do
-        while self.list.size >= self.max
-          @condition_variable.wait(@mutex)
-        end
+        @min_workers.times{ self.spawn_worker }
       end
     end
 
-    def process(connecting_socket)
-      return if !connecting_socket
-      self.wait_for_available
-      worker_id = self.list.size + 1
-      @list << Thread.new{ self.serve_client(worker_id, connecting_socket) }
+    # Adds the connection to it's queue and notifies any spawned workers (
+    # `@cond.signal`). If there are no workers waiting then it will try to
+    # spawn a worker, unless the maximum has been reached.
+    def enqueue_connection(socket)
+      return if !socket
+      @mutex.synchronize do
+        raise "Unable to add connection while shutting down" if @shutdown
+        @queue << socket
+
+        self.spawn_worker if self.no_workers_waiting? && !self.max_workers_spawned?
+        @cond.signal
+      end
     end
 
-    # Finish simply sleeps the current thread until signaled. Again, when a
-    # worker thread closes down, it signals. This will cause this to wake up and
-    # continue running the loop. Once the list is empty, the method will return.
-    # Otherwise this will sleep until signaled again. This is a graceful
-    # shutdown, letting the threads finish their processing.
-    def finish
+    # Flip the pool and workers shutdown flags and wake up any workers who are
+    # waiting, so they can immediately shutdown. If a worker has picked up a
+    # connection, then it will be joined and allowed to finish serving it.
+    # **NOTE** Any connections that are on the queue are not served.
+    def shutdown
       @mutex.synchronize do
-        @list.reject!{|thread| !thread.alive? }
-        while !self.list.empty?
-          @condition_variable.wait(@mutex)
-        end
+        @shutdown = true
+        @workers.each(&:shutdown)
+        @cond.broadcast
       end
+
+      # use this pattern instead of `each` -- we don't want to call `join` on
+      # every worker (especially if they are shutting down on their own), we
+      # just want to make sure that any who haven't had a chance to finish
+      # get to (this is safe, otherwise you might get a dead thread in the
+      # `each`).
+      @workers.first.join until @workers.empty?
+
+      @spawned = 0
+      @workers = []
+    end
+
+    # Worker callbacks - workers call these to update the pool of their state
+
+    def on_worker_waiting
+      @waiting += 1
+    end
+
+    def on_worker_stop_waiting
+      @waiting -= 1
+    end
+
+    def on_worker_shutdown(worker)
+      @spawned -= 1
+      @workers.delete worker
     end
 
     protected
 
-    def log(message, worker_id)
-      self.logger.info("[Worker##{worker_id}] #{message}") if self.logger
+    def spawn_worker
+      worker = DatTCP::Worker.new(self, @queue) do |socket, worker|
+        self.serve_socket(socket, worker)
+      end
+      @workers << worker
+      @spawned += 1
+      worker
     end
 
-    def serve_client(worker_id, connecting_socket)
+    def serve_socket(socket, worker)
       begin
-        Thread.current["client_address"] = connecting_socket.peeraddr[1, 2].reverse.join(':')
-        self.log("Connecting #{Thread.current["client_address"]}", worker_id)
-        @serve_client_proc.call(connecting_socket)
+        @serve_proc.call(socket)
       rescue Exception => exception
-        self.log("Exception occurred, stopping worker", worker_id)
+        self.logger.error "Exception raised while serving connection!"
+        self.logger.error "#{exception.class}: #{exception.message}"
+        self.logger.error exception.backtrace.join("\n")
       ensure
-        self.disconnect_client(worker_id, connecting_socket, exception)
+        socket.close rescue false
       end
     end
 
-    # Closes the client connection and also shuts the thread down. This is done
-    # by removing the thread from the list. This is wrapped in a mutex
-    # synchronize, to ensure only one thread interacts with list at a time. Also
-    # the condition variable is signaled to trigger the `finish` or
-    # `wait_for_available` methods.
-    def disconnect_client(worker_id, connecting_socket, exception)
-      connecting_socket.close rescue false
+    def no_workers_waiting?
+      @waiting <= 0
+    end
+
+    def max_workers_spawned?
+      @max_workers <= @spawned
+    end
+
+  end
+
+  class Worker
+
+    def initialize(pool, queue, &block)
+      @pool  = pool
+      @queue = queue
+      @mutex = @pool.mutex
+      @cond  = @pool.cond
+      @block = block
+
+      @shutdown = false
+      @thread = Thread.new{ work_loop }
+    end
+
+    def shutdown
+      @shutdown = true
+    end
+
+    def join
+      @thread.join if @thread
+    end
+
+    protected
+
+    def work_loop
+      loop do
+        self.wait_for_work
+        break if @shutdown
+        @block.call(@queue.pop, self)
+      end
+    ensure
+      @pool.on_worker_shutdown(self)
+    end
+
+    # Wait for a connection to serve by checking if the queue is empty. If so
+    # enter a "waiting" state (`@cond.wait(@mutex)`). The pool will signal to
+    # wake up workers and they can check the queue again. The `@mutex` ensures
+    # only one thread gets to check the queue at a time.
+    def wait_for_work
       @mutex.synchronize do
-        @list.delete(Thread.current)
-        @condition_variable.signal
+        while @queue.empty?
+          return if @shutdown
+
+          @pool.on_worker_waiting
+          @cond.wait(@mutex)
+          @pool.on_worker_stop_waiting
+        end
       end
-      if exception
-        self.log("#{exception.class}: #{exception.message}", worker_id)
-        self.log(exception.backtrace.join("\n"), worker_id)
-      end
-      self.log("Disconnecting #{Thread.current["client_address"]}", worker_id)
     end
 
   end

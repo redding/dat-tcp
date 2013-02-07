@@ -17,9 +17,10 @@ module DatTCP
     #                   are connections that haven't been 'accepted'.
     # `debug`         - Whether or not the server should output debug
     #                   messages. Otherwise it is silent.
+    # `min_workers`   - The minimum number of threads that the server should
+    #                   have running for handling connections.
     # `max_workers`   - The maximum number of threads that the server will
-    #                   spin up to handle connections. If this is reached the
-    #                   server will wait for a thread to become free.
+    #                   spin up to handle connections.
     # `ready_timeout` - The number of seconds the server will wait for a new
     #                   connection. This controls the "responsiveness" of the
     #                   server; how fast it will perform checks, like
@@ -31,16 +32,15 @@ module DatTCP
       config = OpenStruct.new(config || {})
       @backlog_size  = config.backlog_size  || 1024
       @debug         = config.debug         || false
+      @min_workers   = config.min_workers   || 2
       @max_workers   = config.max_workers   || 4
       @ready_timeout = config.ready_timeout || 1
 
-      @logger      = DatTCP::Logger.new(@debug)
-      @worker_pool = DatTCP::WorkerPool.new(@max_workers, @logger) do |socket|
-        self.serve(socket)
-      end
+      @logger = DatTCP::Logger.new(@debug)
 
       @tcp_server       = nil
       @work_loop_thread = nil
+      @worker_pool      = nil
       set_state :stop
     end
 
@@ -142,20 +142,28 @@ module DatTCP
     protected
 
     def work_loop
-      self.logger.info("Starting work loop...")
+      self.logger.info "Starting work loop..."
+      setup_run
       while @state.run?
-        @worker_pool.process self.accept_connection
+        @worker_pool.enqueue_connection self.accept_connection
       end
-      self.logger.info("Stopping work loop...")
+      self.logger.info "Stopping work loop..."
       graceful_shutdown if !@state.halt?
     rescue Exception => exception
-      self.logger.info("Exception occurred, stopping server!")
-      self.logger.error("#{exception.class}: #{exception.message}")
-      self.logger.error(exception.backtrace.join("\n"))
+      self.logger.error "Exception occurred, stopping server!"
+      self.logger.error "#{exception.class}: #{exception.message}"
+      self.logger.error exception.backtrace.join("\n")
     ensure
       close_connection if !@state.pause?
       clear_thread
-      self.logger.info("Stopped work loop")
+      self.logger.info "Stopped work loop"
+    end
+
+    def setup_run
+      min, max = @min_workers, @max_workers
+      @worker_pool = DatTCP::WorkerPool.new(min, max, @debug) do |socket|
+        self.serve(socket)
+      end
     end
 
     # An accept-loop waiting for new connections. Will wait for a connection
@@ -172,12 +180,13 @@ module DatTCP
     end
 
     def graceful_shutdown
-      self.logger.info("Shutting down worker pool, letting it finish...")
-      @worker_pool.finish
+      self.logger.info "Shutting down worker pool, letting it finish..."
+      @worker_pool.shutdown
+      @worker_pool = nil
     end
 
     def close_connection
-      self.logger.info("Closing TCP server connection...")
+      self.logger.info "Closing TCP server connection..."
       self.stop_listening
     end
 

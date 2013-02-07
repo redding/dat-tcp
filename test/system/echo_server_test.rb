@@ -9,7 +9,7 @@ class EchoServerTest < Assert::Context
 
   desc "defining a custom Echo Server"
   setup do
-    @server = EchoServer.new({ :ready_timeout => 0 })
+    @server = EchoServer.new({ :ready_timeout => 0.1 })
   end
 
   should "have started a separate thread for running the server" do

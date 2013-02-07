@@ -106,7 +106,7 @@ module Bench
     def run_server
       require 'bench/server'
       host_and_port = HOST_AND_PORT.dup
-      server = Bench::Server.new({ :debug => !!ENV['DEBUG'] })
+      server = Bench::Server.new({ :debug => !!ENV['BENCH_DEBUG'] })
       [ "QUIT", "INT", "TERM" ].each do |name|
         Signal.trap(name){ server.stop }
       end
