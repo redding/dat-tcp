@@ -5,7 +5,7 @@ require 'dat-tcp/logger'
 module DatTCP
 
   class WorkerPool
-    attr_reader :logger, :mutex, :cond, :spawned, :waiting
+    attr_reader :logger, :spawned
 
     def initialize(min = 0, max = 1, debug = false, &serve_proc)
       @min_workers = min
@@ -13,43 +13,39 @@ module DatTCP
       @logger      = DatTCP::Logger.new(debug)
       @serve_proc  = serve_proc
 
-      @mutex = Mutex.new
-      @cond  = ConditionVariable.new
+      @queue           = DatTCP::Queue.new
+      @workers_waiting = DatTCP::WorkersWaiting.new
 
-      @queue   = []
-      @spawned = 0
-      @waiting = 0
+      @mutex   = Mutex.new
       @workers = []
+      @spawned = 0
 
-      @mutex.synchronize do
-        @min_workers.times{ self.spawn_worker }
-      end
+      @min_workers.times{ self.spawn_worker }
     end
 
-    # Adds the connection to it's queue and notifies any spawned workers (
-    # `@cond.signal`). If there are no workers waiting then it will try to
-    # spawn a worker, unless the maximum has been reached.
+    def waiting
+      @workers_waiting.count
+    end
+
+    # Check if all workers are busy before adding the connection. When the
+    # connection is added, a worker will stop waiting (if it was idle). Because
+    # of that, we can't reliably check if all workers are busy. We might think
+    # all workers are busy because we just woke up a sleeping worker to serve
+    # this connection. Then we would spawn a worker to do nothing.
     def enqueue_connection(socket)
-      return if !socket
-      @mutex.synchronize do
-        raise "Unable to add connection while shutting down" if @shutdown
-        @queue << socket
-
-        self.spawn_worker if self.no_workers_waiting? && !self.max_workers_spawned?
-        @cond.signal
-      end
+      new_worker_needed = all_workers_are_busy?
+      @queue.push socket
+      self.spawn_worker if new_worker_needed && havent_reached_max_workers?
     end
 
-    # Flip the pool and workers shutdown flags and wake up any workers who are
-    # waiting, so they can immediately shutdown. If a worker has picked up a
-    # connection, then it will be joined and allowed to finish serving it.
+    # Shutdown each worker and then the queue. Shutting down the queue will
+    # signal any workers waiting on it to wake up, so they can start shutting
+    # down. If a worker is processing a connection, then it will be joined and
+    # allowed to finish.
     # **NOTE** Any connections that are on the queue are not served.
     def shutdown
-      @mutex.synchronize do
-        @shutdown = true
-        @workers.each(&:shutdown)
-        @cond.broadcast
-      end
+      @workers.each(&:shutdown)
+      @queue.shutdown
 
       # use this pattern instead of `each` -- we don't want to call `join` on
       # every worker (especially if they are shutting down on their own), we
@@ -57,38 +53,30 @@ module DatTCP
       # get to (this is safe, otherwise you might get a dead thread in the
       # `each`).
       @workers.first.join until @workers.empty?
-
-      @spawned = 0
-      @workers = []
     end
 
-    # Worker callbacks - workers call these to update the pool of their state
-
-    def on_worker_waiting
-      @waiting += 1
-    end
-
-    def on_worker_stop_waiting
-      @waiting -= 1
-    end
-
-    def on_worker_shutdown(worker)
-      @spawned -= 1
-      @workers.delete worker
+    # public, because workers need to call it for themselves
+    def despawn_worker(worker)
+      @mutex.synchronize do
+        @spawned -= 1
+        @workers.delete worker
+      end
     end
 
     protected
 
     def spawn_worker
-      worker = DatTCP::Worker.new(self, @queue) do |socket, worker|
-        self.serve_socket(socket, worker)
+      @mutex.synchronize do
+        worker = DatTCP::Worker.new(self, @queue, @workers_waiting) do |socket|
+          self.serve_socket(socket)
+        end
+        @workers << worker
+        @spawned += 1
+        worker
       end
-      @workers << worker
-      @spawned += 1
-      worker
     end
 
-    def serve_socket(socket, worker)
+    def serve_socket(socket)
       begin
         @serve_proc.call(socket)
       rescue Exception => exception
@@ -100,27 +88,67 @@ module DatTCP
       end
     end
 
-    def no_workers_waiting?
-      @waiting <= 0
+    def all_workers_are_busy?
+      @workers_waiting.count <= 0
     end
 
-    def max_workers_spawned?
-      @max_workers <= @spawned
+    def havent_reached_max_workers?
+      @mutex.synchronize do
+        @spawned < @max_workers
+      end
+    end
+
+  end
+
+  class Queue
+
+    def initialize
+      @todo = []
+      @shutdown = false
+      @mutex              = Mutex.new
+      @condition_variable = ConditionVariable.new
+    end
+
+    # Add the connection and wake up the first worker (the `signal`) that's
+    # waiting (because of `wait_for_new_connection`)
+    def push(socket)
+      raise "Unable to add connection while shutting down" if @shutdown
+      @mutex.synchronize do
+        @todo << socket
+        @condition_variable.signal
+      end
+    end
+
+    def pop
+      @mutex.synchronize{ @todo.pop }
+    end
+
+    def empty?
+      @mutex.synchronize{ @todo.empty? }
+    end
+
+    # wait to be signaled by `push`
+    def wait_for_new_connection
+      @mutex.synchronize{ @condition_variable.wait(@mutex) }
+    end
+
+    # wake up any workers who are idle (because of `wait_for_new_connection`)
+    def shutdown
+      @shutdown = true
+      @mutex.synchronize{ @condition_variable.broadcast }
     end
 
   end
 
   class Worker
 
-    def initialize(pool, queue, &block)
-      @pool  = pool
-      @queue = queue
-      @mutex = @pool.mutex
-      @cond  = @pool.cond
-      @block = block
-
-      @shutdown = false
-      @thread = Thread.new{ work_loop }
+    def initialize(pool, queue, workers_waiting, &block)
+      @pool            = pool
+      @queue           = queue
+      @workers_waiting = workers_waiting
+      @block           = block
+      @shutdown        = false
+      @thread          = Thread.new{ work_loop }
     end
 
     def shutdown
@@ -137,26 +165,38 @@ module DatTCP
       loop do
         self.wait_for_work
         break if @shutdown
-        @block.call(@queue.pop, self)
+        @block.call @queue.pop
       end
     ensure
-      @pool.on_worker_shutdown(self)
+      @pool.despawn_worker(self)
     end
 
-    # Wait for a connection to serve by checking if the queue is empty. If so
-    # enter a "waiting" state (`@cond.wait(@mutex)`). The pool will signal to
-    # wake up workers and they can check the queue again. The `@mutex` ensures
-    # only one thread gets to check the queue at a time.
+    # Wait for a connection to serve by checking if the queue is empty.
     def wait_for_work
-      @mutex.synchronize do
-        while @queue.empty?
-          return if @shutdown
-
-          @pool.on_worker_waiting
-          @cond.wait(@mutex)
-          @pool.on_worker_stop_waiting
-        end
+      while @queue.empty?
+        return if @shutdown
+        @workers_waiting.increment
+        @queue.wait_for_new_connection
+        @workers_waiting.decrement
       end
+    end
+
+  end
+
+  class WorkersWaiting
+    attr_reader :count
+
+    def initialize
+      @mutex = Mutex.new
+      @count = 0
+    end
+
+    def increment
+      @mutex.synchronize{ @count += 1 }
+    end
+
+    def decrement
+      @mutex.synchronize{ @count -= 1 }
     end
 
   end

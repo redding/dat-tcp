@@ -9,9 +9,8 @@ class DatTCP::WorkerPool
     end
     subject{ @work_pool }
 
-    should have_instance_methods :logger, :mutex, :cond, :spawned, :waiting
-    should have_instance_methods :enqueue_connection, :shutdown
-    should have_instance_methods :on_worker_waiting, :on_worker_stop_waiting, :on_worker_shutdown
+    should have_instance_methods :logger, :enqueue_connection, :shutdown
+    should have_instance_methods :despawn_worker, :spawned, :waiting
 
   end
 
