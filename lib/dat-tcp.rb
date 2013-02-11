@@ -143,7 +143,8 @@ module DatTCP
 
     def work_loop
       self.logger.info "Starting work loop..."
-      setup_run
+      pool_args = [ @min_workers, @max_workers, @debug ]
+      @worker_pool = DatTCP::WorkerPool.new(*pool_args){|socket| serve(socket) }
       while @state.run?
         @worker_pool.enqueue_connection self.accept_connection
       end
@@ -157,13 +158,6 @@ module DatTCP
       close_connection if !@state.pause?
       clear_thread
       self.logger.info "Stopped work loop"
-    end
-
-    def setup_run
-      min, max = @min_workers, @max_workers
-      @worker_pool = DatTCP::WorkerPool.new(min, max, @debug) do |socket|
-        self.serve(socket)
-      end
     end
 
     # An accept-loop waiting for new connections. Will wait for a connection
