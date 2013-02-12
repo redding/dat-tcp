@@ -33,6 +33,7 @@ module DatTCP
     # all workers are busy because we just woke up a sleeping worker to serve
     # this connection. Then we would spawn a worker to do nothing.
     def enqueue_connection(socket)
+      return if !socket
       new_worker_needed = all_workers_are_busy?
       @queue.push socket
       self.spawn_worker if new_worker_needed && havent_reached_max_workers?
