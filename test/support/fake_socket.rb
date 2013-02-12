@@ -1,20 +1,30 @@
 class FakeSocket
-  attr_reader :written_values
 
-  def initialize
-    @written_values = []
+  def initialize(*bytes)
+    @out = StringIO.new
+    @in  = StringIO.new
+    reset(*bytes)
   end
 
-  def peeraddr
-    [ nil, 12345, "fakehost", nil ]
+  def reset(*new_bytes)
+    @in << new_bytes.join; @in.rewind;
   end
 
-  def print(value)
-    @written_values << value
+  def in;  @in.string;  end
+  def out; @out.string; end
+
+  # Socket methods -- requied by Sanford::Protocol
+
+  def read
+    @in.read
+  end
+
+  def write(bytes)
+    @out << bytes
   end
 
   def close
-    true
+    @closed = true
   end
 
 end
