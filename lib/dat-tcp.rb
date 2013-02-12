@@ -57,18 +57,16 @@ module DatTCP
 
     # TODO - allow creating a TCPServer from a filedescriptor
     def listen(ip, port)
-      if !self.listening?
-        set_state :listen
-        run_hook 'on_listen'
-        @tcp_server = TCPServer.new(ip, port)
-        @tcp_server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true)
-        # TODO - configure TCPServer hook
-        @tcp_server.listen(@backlog_size)
-      end
+      set_state :listen
+      run_hook 'on_listen'
+      @tcp_server = TCPServer.new(ip, port)
+      @tcp_server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true)
+      # TODO - configure TCPServer hook
+      @tcp_server.listen(@backlog_size)
     end
 
     def run(*args)
-      listen(*args)
+      listen(*args) if !self.listening?
       set_state :run
       run_hook 'on_run'
       @work_loop_thread = Thread.new{ work_loop }

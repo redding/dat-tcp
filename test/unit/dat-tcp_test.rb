@@ -55,6 +55,13 @@ module DatTCP
       assert_nil subject.on_halt_called
     end
 
+    should "be able to call run after it" do
+      assert_nothing_raised{ subject.run }
+      assert subject.running?
+
+      subject.pause
+    end
+
   end
 
   class RunTest < BaseTest
