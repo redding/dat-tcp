@@ -55,21 +55,25 @@ module DatTCP
     #                  throw an "address in use" if a socket is active on the
     #                  port.
 
-    # TODO - allow creating a TCPServer from a filedescriptor
-    def listen(ip, port)
+    def listen(*args)
       set_state :listen
       run_hook 'on_listen'
-      @tcp_server = TCPServer.new(ip, port)
+      @tcp_server = if args.size > 1
+        TCPServer.new(*args)
+      else
+        TCPServer.for_fd(*args)
+      end
       @tcp_server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true)
       run_hook 'configure_tcp_server', @tcp_server
       @tcp_server.listen(@backlog_size)
     end
 
     def run(*args)
+      client_file_descriptors = args.last.kind_of?(Array) ? args.pop : []
       listen(*args) if !self.listening?
       set_state :run
       run_hook 'on_run'
-      @work_loop_thread = Thread.new{ work_loop }
+      @work_loop_thread = Thread.new{ work_loop(client_file_descriptors) }
     end
 
     def pause(wait = true)
@@ -150,10 +154,11 @@ module DatTCP
 
     protected
 
-    def work_loop
+    def work_loop(client_file_descriptors = [])
       self.logger.info "Starting work loop..."
       pool_args = [ @min_workers, @max_workers, @debug ]
       @worker_pool = DatTCP::WorkerPool.new(*pool_args){|socket| serve(socket) }
+      self.enqueue_file_descriptors(client_file_descriptors)
       while @state.run?
         @worker_pool.enqueue_connection self.accept_connection
       end
@@ -167,6 +172,12 @@ module DatTCP
       close_connection if !@state.pause?
       clear_thread
       self.logger.info "Stopped work loop"
+    end
+
+    def enqueue_file_descriptors(file_descriptors)
+      file_descriptors.each do |file_descriptor|
+        @worker_pool.enqueue_connection TCPSocket.for_fd(file_descriptor)
+      end
     end
 
     # An accept-loop waiting for new connections. Will wait for a connection
@@ -185,7 +196,6 @@ module DatTCP
     def graceful_shutdown
       self.logger.info "Shutting down worker pool, letting it finish..."
       @worker_pool.shutdown
-      @worker_pool = nil
     end
 
     def close_connection

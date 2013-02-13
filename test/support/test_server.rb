@@ -28,4 +28,8 @@ class TestServer
     @on_halt_called = true
   end
 
+  def serve(socket)
+    socket.write('handled')
+  end
+
 end

@@ -63,11 +63,6 @@ module DatTCP
       subject.pause
     end
 
-    should "return the TCP server's file descriptor with #file_descriptor" do
-      tcp_server = @server.instance_variable_get("@tcp_server")
-      assert_equal tcp_server.fileno, subject.file_descriptor
-    end
-
   end
 
   class RunTest < BaseTest
@@ -77,6 +72,7 @@ module DatTCP
     end
     teardown do
       @server.stop
+      @thread.join
     end
 
     should "return a thread for running the server" do
@@ -98,24 +94,6 @@ module DatTCP
       assert_nil subject.on_halt_called
     end
 
-    should "return the connections file descriptors" do
-      server = TestServer.new({
-        :ready_timeout => 0,
-        :min_workers   => 0,
-        :max_workers   => 0
-      })
-      thread = server.run('localhost', 29384)
-      client_socket = TCPSocket.new('localhost', 29384)
-      thread.join(0.5)
-      assert_nothing_raised do
-        server_socket_fileno = server.connections_file_descriptors.first
-        server_socket = TCPSocket.for_fd(server_socket_fileno)
-        assert_equal [ 29384, 'localhost' ], server_socket.addr[1, 2]
-      end
-      client_socket.close
-      server.stop
-    end
-
   end
 
   class PauseTest < BaseTest
@@ -123,6 +101,7 @@ module DatTCP
     setup do
       @thread = @server.run('localhost', 45678)
       @server.pause
+      @thread.join
     end
     teardown do
       @server.stop_listening
@@ -153,6 +132,7 @@ module DatTCP
     setup do
       @thread = @server.run('localhost', 45678)
       @server.stop
+      @thread.join
     end
 
     should "stop the thread" do
@@ -180,6 +160,7 @@ module DatTCP
     setup do
       @thread = @server.run('localhost', 45678)
       @server.halt
+      @thread.join
     end
 
     should "stop the thread" do
@@ -198,6 +179,53 @@ module DatTCP
       assert_nil subject.on_pause_called
       assert_nil subject.on_stop_called
       assert_equal true, subject.on_halt_called
+    end
+
+  end
+
+  class FileDescriptorsTest < BaseTest
+    desc "file descriptor handling"
+    setup do
+      @server = TestServer.new({
+        :ready_timeout => 0,
+        :min_workers   => 0,
+        :max_workers   => 0
+      })
+      @thread = @server.run('localhost', 29384)
+      @client_socket = TCPSocket.new('localhost', 29384)
+      @thread.join(1) # give the server a chance to queue the connection
+    end
+    teardown do
+      @client_socket.close
+      @server.stop
+      @thread.join
+    end
+
+    should "allow getting the TCP server's file descriptor" do
+      tcp_server = subject.instance_variable_get("@tcp_server")
+      assert_equal tcp_server.fileno, subject.file_descriptor
+    end
+
+    should "allow retrieving the connections file descriptors" do
+      server_socket_fileno = subject.connections_file_descriptors.first
+      server_socket = TCPSocket.for_fd(server_socket_fileno)
+
+      assert_equal [ 29384, 'localhost' ], server_socket.addr[1, 2]
+    end
+
+    should "allow building a DatTCP server file descriptors" do
+      subject.pause
+      new_server = TestServer.new({ :ready_timeout => 0 })
+      new_server.listen(@server.file_descriptor)
+      connections = subject.connections_file_descriptors
+      thread = new_server.run(connections)
+      @server.stop_listening
+      value = @client_socket.read if IO.select([ @client_socket ], nil, nil, 2)
+
+      assert_equal 'handled', value
+
+      new_server.stop
+      thread.join
     end
 
   end
