@@ -49,6 +49,7 @@ module DatTCP
 
     should "have called on_listen but no other hooks" do
       assert_equal true, subject.on_listen_called
+      assert_instance_of TCPServer, subject.configure_tcp_server_called
       assert_nil subject.on_run_called
       assert_nil subject.on_pause_called
       assert_nil subject.on_stop_called
@@ -85,6 +86,7 @@ module DatTCP
 
     should "have called on_listen and on_run but no other hooks" do
       assert_equal true, subject.on_listen_called
+      assert_instance_of TCPServer, subject.configure_tcp_server_called
       assert_equal true, subject.on_run_called
       assert_nil subject.on_pause_called
       assert_nil subject.on_stop_called
@@ -114,6 +116,7 @@ module DatTCP
 
     should "have called on_listen, on_run and on_pause but no other hooks" do
       assert_equal true, subject.on_listen_called
+      assert_instance_of TCPServer, subject.configure_tcp_server_called
       assert_equal true, subject.on_run_called
       assert_equal true, subject.on_pause_called
       assert_nil subject.on_stop_called
@@ -140,6 +143,7 @@ module DatTCP
 
     should "have called on_listen, on_run and on_pause but no other hooks" do
       assert_equal true, subject.on_listen_called
+      assert_instance_of TCPServer, subject.configure_tcp_server_called
       assert_equal true, subject.on_run_called
       assert_nil subject.on_pause_called
       assert_equal true, subject.on_stop_called
@@ -166,6 +170,7 @@ module DatTCP
 
     should "have called on_listen, on_run and on_pause but no other hooks" do
       assert_equal true, subject.on_listen_called
+      assert_instance_of TCPServer, subject.configure_tcp_server_called
       assert_equal true, subject.on_run_called
       assert_nil subject.on_pause_called
       assert_nil subject.on_stop_called
