@@ -61,7 +61,7 @@ module DatTCP
       run_hook 'on_listen'
       @tcp_server = TCPServer.new(ip, port)
       @tcp_server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true)
-      # TODO - configure TCPServer hook
+      run_hook 'configure_tcp_server', @tcp_server
       @tcp_server.listen(@backlog_size)
     end
 
@@ -110,6 +110,9 @@ module DatTCP
     # Hooks
 
     def on_listen
+    end
+
+    def configure_tcp_server(tcp_server)
     end
 
     def on_run
@@ -190,8 +193,8 @@ module DatTCP
       @work_loop_thread.join if @work_loop_thread
     end
 
-    def run_hook(method)
-      self.send(method)
+    def run_hook(method, *args)
+      self.send(method, *args)
     end
 
     def set_state(name)
