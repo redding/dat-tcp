@@ -95,6 +95,14 @@ module DatTCP
       @tcp_server = nil
     end
 
+    def file_descriptor
+      @tcp_server.fileno if self.listening?
+    end
+
+    def connections_file_descriptors
+      @worker_pool ? @worker_pool.connections.map(&:fileno) : []
+    end
+
     def listening?
       !!@tcp_server
     end

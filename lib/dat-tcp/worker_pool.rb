@@ -23,6 +23,10 @@ module DatTCP
       @min_workers.times{ self.spawn_worker }
     end
 
+    def connections
+      @queue.items
+    end
+
     def waiting
       @workers_waiting.count
     end
@@ -108,6 +112,10 @@ module DatTCP
       @shutdown = false
       @mutex              = Mutex.new
       @condition_variable = ConditionVariable.new
+    end
+
+    def items
+      @mutex.synchronize{ @todo }
     end
 
     # Add the connection and wake up the first worker (the `signal`) that's

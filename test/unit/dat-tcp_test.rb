@@ -14,6 +14,7 @@ module DatTCP
     should have_instance_methods :listening?, :running?
     should have_instance_methods :on_listen, :on_run, :on_pause, :on_stop, :on_halt
     should have_instance_methods :serve
+    should have_instance_methods :file_descriptor, :connections_file_descriptors
 
     should "return an instance of DatTCP::Logger::Null with #logger" do
       assert_instance_of DatTCP::Logger::Null, subject.logger
@@ -59,8 +60,12 @@ module DatTCP
     should "be able to call run after it" do
       assert_nothing_raised{ subject.run }
       assert subject.running?
-
       subject.pause
+    end
+
+    should "return the TCP server's file descriptor with #file_descriptor" do
+      tcp_server = @server.instance_variable_get("@tcp_server")
+      assert_equal tcp_server.fileno, subject.file_descriptor
     end
 
   end
@@ -91,6 +96,24 @@ module DatTCP
       assert_nil subject.on_pause_called
       assert_nil subject.on_stop_called
       assert_nil subject.on_halt_called
+    end
+
+    should "return the connections file descriptors" do
+      server = TestServer.new({
+        :ready_timeout => 0,
+        :min_workers   => 0,
+        :max_workers   => 0
+      })
+      thread = server.run('localhost', 29384)
+      client_socket = TCPSocket.new('localhost', 29384)
+      thread.join(0.5)
+      assert_nothing_raised do
+        server_socket_fileno = server.connections_file_descriptors.first
+        server_socket = TCPSocket.for_fd(server_socket_fileno)
+        assert_equal [ 29384, 'localhost' ], server_socket.addr[1, 2]
+      end
+      client_socket.close
+      server.stop
     end
 
   end
