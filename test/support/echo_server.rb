@@ -3,6 +3,7 @@ class EchoServer
 
   def serve(socket)
     socket.write(socket.read)
+    socket.close_write
   end
 
   module Helpers
@@ -10,8 +11,9 @@ class EchoServer
     def start_server(server, *args)
       begin
         pid = fork do
+          server.listen(*args)
           trap("TERM"){ server.stop }
-          server.run(*args).join
+          server.run.join
         end
         sleep 0.3 # Give time for the socket to start listening.
         yield
