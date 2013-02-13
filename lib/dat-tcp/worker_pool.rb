@@ -108,14 +108,14 @@ module DatTCP
   class Queue
 
     def initialize
-      @todo = []
+      @items = []
       @shutdown = false
       @mutex              = Mutex.new
       @condition_variable = ConditionVariable.new
     end
 
     def items
-      @mutex.synchronize{ @todo }
+      @mutex.synchronize{ @items }
     end
 
     # Add the connection and wake up the first worker (the `signal`) that's
@@ -123,17 +123,17 @@ module DatTCP
     def push(socket)
       raise "Unable to add connection while shutting down" if @shutdown
       @mutex.synchronize do
-        @todo << socket
+        @items << socket
         @condition_variable.signal
       end
     end
 
     def pop
-      @mutex.synchronize{ @todo.pop }
+      @mutex.synchronize{ @items.pop }
     end
 
     def empty?
-      @mutex.synchronize{ @todo.empty? }
+      @mutex.synchronize{ @items.empty? }
     end
 
     # wait to be signaled by `push`

@@ -56,21 +56,25 @@ module DatTCP
     #                  port.
 
     def listen(*args)
+      build_server_method = if args.size == 2
+        :new
+      elsif args.size == 1
+        :for_fd
+      else
+        raise InvalidListenArgsError.new
+      end
       set_state :listen
       run_hook 'on_listen'
-      @tcp_server = if args.size > 1
-        TCPServer.new(*args)
-      else
-        TCPServer.for_fd(*args)
-      end
+      @tcp_server = TCPServer.send(build_server_method, *args)
+
       @tcp_server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true)
       run_hook 'configure_tcp_server', @tcp_server
+
       @tcp_server.listen(@backlog_size)
     end
 
-    def run(*args)
-      client_file_descriptors = args.last.kind_of?(Array) ? args.pop : []
-      listen(*args) if !self.listening?
+    def run(client_file_descriptors = nil)
+      raise NotListeningError.new if !self.listening?
       set_state :run
       run_hook 'on_run'
       @work_loop_thread = Thread.new{ work_loop(client_file_descriptors) }
@@ -103,7 +107,7 @@ module DatTCP
       @tcp_server.fileno if self.listening?
     end
 
-    def connections_file_descriptors
+    def client_file_descriptors
       @worker_pool ? @worker_pool.connections.map(&:fileno) : []
     end
 
@@ -154,16 +158,16 @@ module DatTCP
 
     protected
 
-    def work_loop(client_file_descriptors = [])
+    def work_loop(client_file_descriptors = nil)
       self.logger.info "Starting work loop..."
       pool_args = [ @min_workers, @max_workers, @debug ]
       @worker_pool = DatTCP::WorkerPool.new(*pool_args){|socket| serve(socket) }
-      self.enqueue_file_descriptors(client_file_descriptors)
+      self.enqueue_file_descriptors(client_file_descriptors || [])
       while @state.run?
         @worker_pool.enqueue_connection self.accept_connection
       end
       self.logger.info "Stopping work loop..."
-      graceful_shutdown if !@state.halt?
+      shutdown_worker_pool if !@state.halt?
     rescue Exception => exception
       self.logger.error "Exception occurred, stopping server!"
       self.logger.error "#{exception.class}: #{exception.message}"
@@ -193,7 +197,7 @@ module DatTCP
       !!IO.select([ @tcp_server ], nil, nil, @ready_timeout)
     end
 
-    def graceful_shutdown
+    def shutdown_worker_pool
       self.logger.info "Shutting down worker pool, letting it finish..."
       @worker_pool.shutdown
     end
@@ -229,6 +233,22 @@ module DatTCP
         define_method("#{name}?"){ self.to_sym == name }
       end
 
+    end
+
+  end
+
+  class InvalidListenArgsError < ArgumentError
+
+    def initialize
+      super "invalid arguments, must be either a file descriptor or an ip and port"
+    end
+
+  end
+
+  class NotListeningError < RuntimeError
+
+    def initialize
+      super "`listen` must be called before calling `run`"
     end
 
   end
