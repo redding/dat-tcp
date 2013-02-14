@@ -103,6 +103,14 @@ module DatTCP
       @tcp_server = nil
     end
 
+    def ip
+      @tcp_server.addr[2] if self.listening?
+    end
+
+    def port
+      @tcp_server.addr[1] if self.listening?
+    end
+
     def file_descriptor
       @tcp_server.fileno if self.listening?
     end

@@ -13,7 +13,7 @@ module DatTCP
     should have_instance_methods :listen, :run, :pause, :stop, :halt, :stop_listening
     should have_instance_methods :listening?, :running?
     should have_instance_methods :on_listen, :on_run, :on_pause, :on_stop, :on_halt
-    should have_instance_methods :serve
+    should have_instance_methods :serve, :ip, :port
     should have_instance_methods :file_descriptor, :client_file_descriptors
 
     should "return an instance of DatTCP::Logger::Null with #logger" do
@@ -70,6 +70,11 @@ module DatTCP
       assert_nothing_raised{ subject.run }
       assert subject.running?
       subject.pause
+    end
+
+    should "allow retrieving it's ip and port" do
+      assert_equal 'localhost', subject.ip
+      assert_equal 45678,       subject.port
     end
 
   end
