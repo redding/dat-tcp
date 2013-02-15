@@ -1,10 +1,10 @@
 # DatTCP
 
-DatTCP is a generic server implementation that uses ruby's `TCPServer` and threads. It is heavily influenced by ruby's `GServer` and built using it's patterns.
+DatTCP is a generic server implementation that uses ruby's `TCPServer` and threads. It is heavily influenced by ruby's `GServer` and [Puma](http://puma.io) and built using many of their patterns.
 
 ## Usage
 
-To define your own server, mixin `DatTCP::Server` and define the `serve` method. Then, when your server receives a new connection, it will hand the socket to your `serve` method and it can be read from and written to:
+To define your own server, mixin `DatTCP::Server` and define the `serve` method. Then, when your server receives a new connection, it will hand the socket to your `serve` method. Your `serve` method can then read and write to the socket:
 
 ```ruby
 class MyServer
@@ -18,42 +18,37 @@ class MyServer
 end
 ```
 
-An important thing to note is that, when there's a new connection and the `serve` method is called, it's done in a separate thread. This means that your `serve` method should be written using threadsafe patterns.
+An important thing to note is that, a separate thread is used for every connection. This means that your `serve` method should be written using threadsafe patterns, as 2 threads may call it at the same time.
 
 ### Starting
 
-To start the server, create a new instance passing a host and port. Then call the `start` method:
-
 ```ruby
-server = MyServer.new('localhost', 8000)
-server.start
+server = MyServer.new({ :min_workers => 1 })
+server.listen('localhost', 12000)
+server.run
 ```
 
-This will start running the server in a separate thread, allowing your current thread to continue procesing. The server starts an infinite loop checking for new connections and spawning workers to handle them. Because of the separate thread, this won't stop your current ruby process from executing. Many times, it's desirable to go ahead and suspend processing of your current thread and to allow the server thread to take over. This can be done using the `join_thread` method:
+To start a server you create a new instance of your server. You can optionally pass overrides to the default configuration (see further down). Then calling `listen` on the server will build a `TCPServer` and begin listening for connections. Finally, calling `run` will begin a server thread for accepting and queueing connections.
+
+Generally, you will not want to `join` the server's thread, so that your
+process will not end. This is easily done, because the `run` method returns the
+server's thread and it can be easily joined:
 
 ```ruby
-server.join_thread
+server.run.join
 ```
 
-Once this is done, the server thread will take over, which will put the process into the infinite server loop. At this point it can only be stopped using signals (see "Usage - Stopping" for how this can be done).
-
-**NOTE** See "Advanced - Server Thread" for more information and reasoning behind running the server loop in a separate thread.
+The server will then take over and continue processing connections until stopped. See "Usage - Stopping" for how this can be done using signals.
 
 ### Processing Connections
 
 To handle a client connection, you define the `serve` method on your server. It will be passed an instance of `TCPSocket` which is the connecting socket of some client. The socket can be read from and written to, and this will communicate with the client:
 
 ```ruby
-# a possible `serve` method
-def serve(client)
-  # read the size of the message, expected in the first 4 bytes
-  serialized_size = client.recvfrom(4).first
-  size = serialized_size.unpack('N').first
-  message = client.recvfrom(size).first
-  # do some processing to generate a response
-  response_size = response_message.bytesize
-  serialized_size = [ response_size ].pack('N')
-  client.send(serialized_size + response_message, 0)
+# a possible `serve` method -- for an echo server
+def serve(socket)
+  message = socket.read
+  socket.write(message)
 end
 ```
 
@@ -68,55 +63,55 @@ server.stop
 If you are joining the server thread, it's useful to setup signal traps before joining the server thread:
 
 ```ruby
-server = MyServer.new('localhost', 8000)
-server.start
-Signal.trap('QUIT'){ server.stop }
-server.join_thread
+server = MyServer.new
+server.listen('localhost', 8000)
+Signal.trap('TERM'){ server.stop }
+server.run.join
 ```
 
 Then you can use the UNIX `kill` command to stop the server. Something like:
 
 ```
 # assume our process id is 12345
-# unix
-kill -15 12345
+kill -TERM 12345
 # or in ruby
-# Process.kill('QUIT', 12345)
+# Process.kill('TERM', 12345)
 ```
 
 ### Customization
 
 As previously mentioned, when creating your own server, you should define a custom `serve` method. In addition to this, there are a number of ways to customize the server you are running.
 
-#### Max Workers
+#### Configuration
 
-When creating an instance of a server, servers can optionally be passed a number of workers to use:
+When creating a server, there are a number of options that can be modified:
 
-```ruby
-server = MyServer.new('localhost', 8000, { :max_workers => 10 })
-```
+* `backlog_size`  - The number of connections that can be pending. These are
+                    connections that haven't been 'accepted' by the server.
+* `debug`         - Whether or not the server should output debug messages.
+                    Otherwise it is silent.
+* `min_workers`   - The minimum number of threads that the server should have
+                    running for handling connections.
+* `max_workers`   - The maximum number of threads that the server will spin up
+                    to handle connections.
+`ready_timeout`   - The number of seconds the server will wait for a new
+                    connection. This controls the "responsiveness" of the
+                    server; how fast it will perform checks, like
+                    detecting it's been stopped.
 
-Then, when the server is started, it will allow up to 10 worker threads for processing connections.
+#### Hooks
 
-#### Debug
+A DatTCP server also has a number of hooks for adding custom behavior when different events occur:
 
-DatTCP has a debug mode built in. When turned on, it logs when it starts or stops, when a client connects or disconnects and when an error occurs. It's off by default, to turn it on, set `debug` to `true`:
-
-```ruby
-server = MyServer.new('localhost', 8000, { :debug => true })
-```
-
-When turned on, DatTCP will log it's debug messages to STDOUT.
-
-#### Connection Ready Timeout
-
-DatTCP uses `IO.select` combined with `accept_nonblock` on the TCP server to listen for new connections (see "Advanced - Listening For Connections" section for more details and reasoning). `IO.select` takes a timeout which can be customized by passing `ready_timeout` when creating a new server. This throttles how spastic the server is when waiting for a new connection, but also limits how responsive the server is when told to stop:
-
-```ruby
-server = MyServer.new('localhost', 8000, { :ready_timeout => 0 }) # or, no timeout
-```
-
-Again, see the "Advanced - Listening For Connections" for a more in-depth explanation.
+* `on_listen`            - Called when `listen` is called.
+* `configure_tcp_server` - Called after an instance of `TCPServer` is created,
+                           but before it starts listening. The instance will
+                           be passed to this method, so this can be used to
+                           set socket options if desired.
+* `on_run`               - Called when `run` is called.
+* `on_pause`             - Called when `pause` is called.
+* `on_stop`              - Called when `stop` is called.
+* `on_halt`              - Called when `halt` is called.
 
 ## Benchmarking
 
@@ -140,41 +135,3 @@ This will both output the results to STDOUT and to a report file. When the serve
 
 * The bench server is an echo server, it writes back whatever it was sent. Modifying the message sent, from what it currently is, will probably negatively impact performance and can no longer be compared with any historical reports.
 * The calculations should be at a very minute scale (a single request should take around 1ms and probably less). This means it can vary from run to run. I recommend running it ~5 times and keeping the lowest results. In general, requests shouldn't take much longer than a 1ms on average.
-
-## Advanced
-
-### Server Thread
-
-DatTCP uses a separate thread to run the TCP server in. This allows for better control over the server and is also convenient for running tests against the server. Also, the server thread can also be joined into the current thread, which is essentially the same as not running the server in a thread.
-
-To manage this, whenever the server is started, it creates a new thread and starts the TCP server loop in it:
-
-```ruby
-def start
-  @thread = Thread.new do
-    tcp_server = TCPServer.new(host, port)
-    while !@shutdown
-      socket = tcp_server.accept
-      # handle socket
-    end
-  end
-end
-```
-
-The server keeps track of the thread so that it can check the thread's status and join the thread.
-
-### Listening For Connections
-
-DatTCP listens for connections by using a combination of `IO.select` and socket's `accept`. When the server is started, it creates a TCP socket instance and calls `IO.select` with a timeout. This will return if a client connects or after the timeout has expired. If a client connected, the server will then call `accept` on the TCP socket. At this point, the accept-loop is broken out of and the client socket from `accept` is returned. In the case there isn't a connection after the `IO.select` timeout, the loop starts over. Also during this loop, the server checks to see if it's been stopped. If so, the loop is also broken out of. The code for this looks something like:
-
-```ruby
-loop do
-  if IO.select([ server_socket ], nil nil, timeout)
-    return server_socket.accept
-  elsif shutdown?
-    return
-  end
-end
-```
-
-DatTCP uses `IO.select` because the `accept` call blocks, which causes the process to become unresponsive, in the case you want to stop or restart it. Using `IO.select` before calling `accept` allows the server to be responsive because it only waits for a known timeout.

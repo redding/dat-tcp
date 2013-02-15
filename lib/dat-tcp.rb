@@ -12,20 +12,6 @@ module DatTCP
 
   module Server
 
-    # Configuration Options:
-    # `backlog_size`  - The number of connections that can be pending. These
-    #                   are connections that haven't been 'accepted'.
-    # `debug`         - Whether or not the server should output debug
-    #                   messages. Otherwise it is silent.
-    # `min_workers`   - The minimum number of threads that the server should
-    #                   have running for handling connections.
-    # `max_workers`   - The maximum number of threads that the server will
-    #                   spin up to handle connections.
-    # `ready_timeout` - The number of seconds the server will wait for a new
-    #                   connection. This controls the "responsiveness" of the
-    #                   server; how fast it will perform checks, like
-    #                   detecting it's been stopped.
-
     attr_reader :logger
 
     def initialize(config = nil)
