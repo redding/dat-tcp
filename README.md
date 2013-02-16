@@ -1,10 +1,8 @@
 # DatTCP
 
-DatTCP is a generic server implementation that uses ruby's `TCPServer` and threads. It is heavily influenced by ruby's `GServer` and [Puma](http://puma.io) and built using many of their patterns.
+DatTCP is a generic threaded server implementation using Ruby's `TCPServer`. It is heavily influenced by `GServer` and [Puma](http://puma.io) and built using many of their patterns.
 
 ## Usage
-
-To define your own server, mixin `DatTCP::Server` and define the `serve` method. Then, when your server receives a new connection, it will hand the socket to your `serve` method. Your `serve` method can then read and write to the socket:
 
 ```ruby
 class MyServer
@@ -18,7 +16,9 @@ class MyServer
 end
 ```
 
-An important thing to note is that, a separate thread is used for every connection. This means that your `serve` method should be written using threadsafe patterns, as 2 threads may call it at the same time.
+Define your own server by mixing in `DatTCP::Server`.  Implementing a `serve` method that accepts a socket instance. DatTCP will call the `serve` method for each new connection it receives.
+
+A separate thread is used for every connection. This means that the `serve` method should be threadsafe, as multiple threads may call it simultaneously.
 
 ### Starting
 
@@ -28,29 +28,26 @@ server.listen('localhost', 12000)
 server.run
 ```
 
-To start a server you create a new instance of your server. You can optionally pass overrides to the default configuration (see further down). Then calling `listen` on the server will build a `TCPServer` and begin listening for connections. Finally, calling `run` will begin a server thread for accepting and queueing connections.
+Create an instance of your server and optionally override any default settings. Call `listen` to build a `TCPServer` and bind to an address and port. Finally, call `run` to begin accepting and queueing connections to serve.
 
-Generally, you will not want to `join` the server's thread, so that your
-process will not end. This is easily done, because the `run` method returns the
-server's thread and it can be easily joined:
+The `run` method returns the thread that is accepting connections.  Typically, you will want to `join` this thread so that it can perpetually accept connections:
 
 ```ruby
 server.run.join
 ```
 
-The server will then take over and continue processing connections until stopped. See "Usage - Stopping" for how this can be done using signals.
+The server will then continue processing connections until it is signalled to stop or its process is killed.
 
-### Processing Connections
-
-To handle a client connection, you define the `serve` method on your server. It will be passed an instance of `TCPSocket` which is the connecting socket of some client. The socket can be read from and written to, and this will communicate with the client:
+### Handling Connections
 
 ```ruby
-# a possible `serve` method -- for an echo server
 def serve(socket)
   message = socket.read
   socket.write(message)
 end
 ```
+
+To handle a client connection, define a `serve` method that accepts a `TCPSocket` instance that can be read from and written to.
 
 ### Stopping
 
@@ -60,58 +57,51 @@ Once the server has been started, it can be stopped using the `stop` method. Obv
 server.stop
 ```
 
-If you are joining the server thread, it's useful to setup signal traps before joining the server thread:
+If you plan to join the server thread, it's useful to setup signal traps so you can signal the server to stop:
 
 ```ruby
-server = MyServer.new
-server.listen('localhost', 8000)
 Signal.trap('TERM'){ server.stop }
 server.run.join
 ```
 
-Then you can use the UNIX `kill` command to stop the server. Something like:
-
-```
+```sh
 # assume our process id is 12345
-kill -TERM 12345
-# or in ruby
-# Process.kill('TERM', 12345)
+$ kill -TERM 12345
 ```
 
-### Customization
+## Customization
 
-As previously mentioned, when creating your own server, you should define a custom `serve` method. In addition to this, there are a number of ways to customize the server you are running.
-
-#### Configuration
-
-When creating a server, there are a number of options that can be modified:
+### Configuration
 
 * `backlog_size`  - The number of connections that can be pending. These are
                     connections that haven't been 'accepted' by the server.
-* `debug`         - Whether or not the server should output debug messages.
-                    Otherwise it is silent.
-* `min_workers`   - The minimum number of threads that the server should have
-                    running for handling connections.
-* `max_workers`   - The maximum number of threads that the server will spin up
-                    to handle connections.
-`ready_timeout`   - The number of seconds the server will wait for a new
+* `min_workers`   - The minimum number of threads available to handle connections
+* `max_workers`   - The maximum number of threads to spin up to handle connections.
+* `ready_timeout` - The number of seconds the server will wait for a new
                     connection. This controls the "responsiveness" of the
-                    server; how fast it will perform checks, like
-                    detecting it's been stopped.
+                    server; how fast it will perform checks, like detecting if
+                    it has been signaled to stop.
+* `debug`         - Output debug messages or not.
 
-#### Hooks
+### Hooks
 
 A DatTCP server also has a number of hooks for adding custom behavior when different events occur:
 
-* `on_listen`            - Called when `listen` is called.
 * `configure_tcp_server` - Called after an instance of `TCPServer` is created,
                            but before it starts listening. The instance will
                            be passed to this method, so this can be used to
-                           set socket options if desired.
+                           set socket options as needed.
+* `on_listen`            - Called when `listen` is called.
 * `on_run`               - Called when `run` is called.
 * `on_pause`             - Called when `pause` is called.
 * `on_stop`              - Called when `stop` is called.
 * `on_halt`              - Called when `halt` is called.
+
+## Installation
+
+```
+$ gem install dat-tcp
+```
 
 ## Benchmarking
 
@@ -135,3 +125,12 @@ This will both output the results to STDOUT and to a report file. When the serve
 
 * The bench server is an echo server, it writes back whatever it was sent. Modifying the message sent, from what it currently is, will probably negatively impact performance and can no longer be compared with any historical reports.
 * The calculations should be at a very minute scale (a single request should take around 1ms and probably less). This means it can vary from run to run. I recommend running it ~5 times and keeping the lowest results. In general, requests shouldn't take much longer than a 1ms on average.
+
+## Contributing
+
+1. Fork it
+2. Create your feature branch (`git checkout -b my-new-feature`)
+3. Commit your changes (`git commit -am 'Added some feature'`)
+4. Push to the branch (`git push origin my-new-feature`)
+5. Create new Pull Request
+
