@@ -24,6 +24,8 @@ module DatTCP
 
       @logger = DatTCP::Logger.new(@debug)
 
+      check_configuration
+
       @tcp_server       = nil
       @work_loop_thread = nil
       @worker_pool      = nil
@@ -207,6 +209,14 @@ module DatTCP
 
     def wait_for_shutdown
       @work_loop_thread.join if @work_loop_thread
+    end
+
+    def check_configuration
+      if @min_workers > @max_workers
+        self.logger.warn "The minimum number of workers (#{@min_workers}) " \
+                         "is greater than " \
+                         "the maximum number of workers (#{@max_workers})."
+      end
     end
 
     def run_hook(method, *args)
