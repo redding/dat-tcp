@@ -73,15 +73,21 @@ $ kill -TERM 12345
 
 ### Configuration
 
-* `backlog_size`  - The number of connections that can be pending. These are
-                    connections that haven't been 'accepted' by the server.
-* `min_workers`   - The minimum number of threads available to handle connections
-* `max_workers`   - The maximum number of threads to spin up to handle connections.
-* `ready_timeout` - The number of seconds the server will wait for a new
-                    connection. This controls the "responsiveness" of the
-                    server; how fast it will perform checks, like detecting if
-                    it has been signaled to stop.
-* `debug`         - Output debug messages or not.
+* `backlog_size`     - The number of connections that can be pending. These
+                       are connections that haven't been 'accepted' by the
+                       server.
+* `min_workers`      - The minimum number of threads available to handle
+                       connections.
+* `max_workers`      - The maximum number of threads to spin up to handle
+                       connections.
+* `ready_timeout`    - The number of seconds the server will wait for a new
+                       connection. This controls the "responsiveness" of the
+                       server; how fast it will perform checks, like detecting
+                       if it has been signaled to stop.
+* `shutdown_timeout` - The number of seconds the server will wait for workers
+                       to finish serving a connection. If they don't finish in
+                       this time, the server will continue shutting down.
+* `debug`            - Output debug messages or not.
 
 ### Hooks
 

@@ -16,11 +16,12 @@ module DatTCP
 
     def initialize(config = nil)
       config = OpenStruct.new(config || {})
-      @backlog_size  = config.backlog_size  || 1024
-      @debug         = config.debug         || false
-      @min_workers   = config.min_workers   || 2
-      @max_workers   = config.max_workers   || 4
-      @ready_timeout = config.ready_timeout || 1
+      @backlog_size     = config.backlog_size     || 1024
+      @debug            = config.debug            || false
+      @min_workers      = config.min_workers      || 2
+      @max_workers      = config.max_workers      || 4
+      @ready_timeout    = config.ready_timeout    || 1
+      @shutdown_timeout = config.shutdown_timeout || 15
 
       @logger = DatTCP::Logger.new(@debug)
 
@@ -195,7 +196,7 @@ module DatTCP
 
     def shutdown_worker_pool
       self.logger.info "Shutting down worker pool, letting it finish..."
-      @worker_pool.shutdown
+      @worker_pool.shutdown(@shutdown_timeout)
     end
 
     def close_connection
