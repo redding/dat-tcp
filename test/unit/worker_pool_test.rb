@@ -98,7 +98,7 @@ class DatTCP::WorkerPool
     setup do
       @mutex = Mutex.new
       @finished = []
-      @work_pool = DatTCP::WorkerPool.new(1, 2) do |socket|
+      @work_pool = DatTCP::WorkerPool.new(1, 2, true) do |socket|
         sleep 1
         @mutex.synchronize{ @finished << socket.read }
       end
@@ -111,7 +111,7 @@ class DatTCP::WorkerPool
       # make sure the workers haven't served the connections
       assert_equal [], @finished
 
-      @work_pool.shutdown
+      @work_pool.shutdown(5)
 
       # NOTE, the last connection shouldn't have been run, as it wasn't
       # picked up by a worker
@@ -121,6 +121,15 @@ class DatTCP::WorkerPool
 
       assert_equal 0, @work_pool.spawned
       assert_equal 0, @work_pool.waiting
+    end
+
+    should "timeout if the workers take to long to finish" do
+       # make sure the workers haven't served the connections
+      assert_equal [], @finished
+
+      assert_raises(DatTCP::TimeoutError) do
+        @work_pool.shutdown(0.1)
+      end
     end
 
   end
