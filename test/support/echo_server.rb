@@ -1,3 +1,5 @@
+require 'dat-tcp'
+
 class EchoServer
   include DatTCP::Server
 

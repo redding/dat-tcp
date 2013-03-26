@@ -1,3 +1,5 @@
+require 'dat-tcp'
+
 class TestServer
   include DatTCP::Server
 

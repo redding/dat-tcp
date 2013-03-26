@@ -1,12 +1,10 @@
-require 'socket'
+# this file is automatically required when you run `assert`
+# put any test helpers here
 
-require 'dat-tcp'
+# add the root dir to the load path
+$LOAD_PATH.unshift(File.expand_path("../..", __FILE__))
 
-require 'test/support/echo_server'
-require 'test/support/test_server'
-require 'test/support/fake_socket'
-require 'test/support/spy_logger'
+# require pry for debugging (`binding.pry`)
+require 'pry'
 
-if defined?(Assert)
-  require 'assert-mocha'
-end
+require 'assert-mocha' if defined?(Assert)

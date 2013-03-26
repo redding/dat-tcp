@@ -1,8 +1,10 @@
 require 'assert'
+require 'test/support/fake_socket'
+require 'dat-tcp/worker_pool'
 
 class DatTCP::WorkerPool
 
-  class BaseTest < Assert::Context
+  class BaseTests < Assert::Context
     desc "DatTCP::WorkerPool"
     setup do
       @work_pool = DatTCP::WorkerPool.new{ }
@@ -14,7 +16,7 @@ class DatTCP::WorkerPool
 
   end
 
-  class WithMiniumWorkersTest < BaseTest
+  class WithMiniumWorkersTests < BaseTests
     desc "DatTCP::WorkerPool"
     setup do
       @work_pool = DatTCP::WorkerPool.new(2)
@@ -27,7 +29,7 @@ class DatTCP::WorkerPool
 
   end
 
-  class EnqueueAndWorkTest < BaseTest
+  class EnqueueAndWorkTests < BaseTests
     desc "enqueue_connection and serve"
 
     should "have added the connection and served it by calling the passed block" do
@@ -50,7 +52,7 @@ class DatTCP::WorkerPool
     end
   end
 
-  class WorkerBehaviorTest < BaseTest
+  class WorkerBehaviorTests < BaseTests
     desc "workers"
     setup do
       @work_pool = DatTCP::WorkerPool.new(1, 2){|socket| sleep(socket.read.to_i) }
@@ -93,7 +95,7 @@ class DatTCP::WorkerPool
 
   end
 
-  class ShutdownTest < BaseTest
+  class ShutdownTests < BaseTests
     desc "shutdown"
     setup do
       @mutex = Mutex.new
