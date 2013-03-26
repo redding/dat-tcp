@@ -2,11 +2,9 @@ require 'ostruct'
 require 'socket'
 require 'thread'
 
-module DatTCP; end
-
+require 'dat-tcp/version'
 require 'dat-tcp/logger'
 require 'dat-tcp/worker_pool'
-require 'dat-tcp/version'
 
 module DatTCP
 

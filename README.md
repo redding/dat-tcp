@@ -103,12 +103,6 @@ A DatTCP server also has a number of hooks for adding custom behavior when diffe
 * `on_stop`              - Called when `stop` is called.
 * `on_halt`              - Called when `halt` is called.
 
-## Installation
-
-```
-$ gem install dat-tcp
-```
-
 ## Benchmarking
 
 DatTCP comes with some rake tasks for benchmarking it's performance. These generate report text files that should be used to see if any additions or changes have altered it's previous performance. These can be run by doing the following:
@@ -131,6 +125,20 @@ This will both output the results to STDOUT and to a report file. When the serve
 
 * The bench server is an echo server, it writes back whatever it was sent. Modifying the message sent, from what it currently is, will probably negatively impact performance and can no longer be compared with any historical reports.
 * The calculations should be at a very minute scale (a single request should take around 1ms and probably less). This means it can vary from run to run. I recommend running it ~5 times and keeping the lowest results. In general, requests shouldn't take much longer than a 1ms on average.
+
+## Installation
+
+Add this line to your application's Gemfile:
+
+    gem 'dat-tcp'
+
+And then execute:
+
+    $ bundle
+
+Or install it yourself as:
+
+    $ gem install dat-tcp
 
 ## Contributing
 
