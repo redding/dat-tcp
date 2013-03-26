@@ -1,8 +1,9 @@
 require 'assert'
+require 'dat-tcp/logger'
 
 module DatTCP::Logger
 
-  class BaseTest < Assert::Context
+  class BaseTests < Assert::Context
     desc "DatTCP::Logger"
     subject{ DatTCP::Logger }
 
@@ -10,7 +11,7 @@ module DatTCP::Logger
 
   end
 
-  class DebugTest < BaseTest
+  class DebugTests < BaseTests
     desc "debug"
     setup do
       @logger = DatTCP::Logger::Debug.new
@@ -22,7 +23,7 @@ module DatTCP::Logger
     end
   end
 
-  class NullTest < BaseTest
+  class NullTests < BaseTests
     desc "null"
     setup do
       @logger = DatTCP::Logger::Null.new

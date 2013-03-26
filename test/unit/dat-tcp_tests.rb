@@ -1,8 +1,10 @@
 require 'assert'
+require 'test/support/test_server'
+require 'dat-tcp'
 
 module DatTCP
 
-  class BaseTest < Assert::Context
+  class BaseTests < Assert::Context
     desc "DatTCP"
     setup do
       @server = TestServer.new({ :ready_timeout => 0 })
@@ -36,7 +38,7 @@ module DatTCP
 
   end
 
-  class ListenTest < BaseTest
+  class ListenTests < BaseTests
     desc "listen"
     setup do
       @server.listen('localhost', 45678)
@@ -79,7 +81,7 @@ module DatTCP
 
   end
 
-  class RunTest < BaseTest
+  class RunTests < BaseTests
     desc "run"
     setup do
       @server.listen('localhost', 45678)
@@ -111,7 +113,7 @@ module DatTCP
 
   end
 
-  class PauseTest < BaseTest
+  class PauseTests < BaseTests
     desc "pause"
     setup do
       @server.listen('localhost', 45678)
@@ -143,7 +145,7 @@ module DatTCP
 
   end
 
-  class StopTest < BaseTest
+  class StopTests < BaseTests
     desc "stop"
     setup do
       @server.listen('localhost', 45678)
@@ -172,7 +174,7 @@ module DatTCP
 
   end
 
-  class HaltTest < BaseTest
+  class HaltTests < BaseTests
     desc "halt"
     setup do
       @server.listen('localhost', 45678)
@@ -201,7 +203,7 @@ module DatTCP
 
   end
 
-  class FileDescriptorsTest < BaseTest
+  class FileDescriptorsTests < BaseTests
     desc "file descriptor handling"
     setup do
       @server = TestServer.new({
