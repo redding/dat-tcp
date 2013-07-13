@@ -12,8 +12,7 @@ module Bench
       TCPSocket.open(@host, @port) do |socket|
         socket.write(message)
         socket.close_write
-        ready = IO.select([ socket ], nil, nil, 10)
-        if ready
+        if IO.select([ socket ], nil, nil, 10)
           socket.read
         else
           raise "Timed out waiting for server response"

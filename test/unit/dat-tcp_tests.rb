@@ -228,7 +228,7 @@ module DatTCP
     end
 
     should "allow retrieving the connections file descriptors" do
-      connections = subject.instance_variable_get("@worker_pool").connections
+      connections = subject.instance_variable_get("@worker_pool").work_items
       assert_equal connections.map(&:fileno), subject.client_file_descriptors
     end
 

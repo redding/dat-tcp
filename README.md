@@ -8,7 +8,7 @@ DatTCP is a generic threaded server implementation using Ruby's `TCPServer`. It 
 class MyServer
   include DatTCP::Server
 
-  def serve(socket)
+  def serve!(socket)
     # read from socket
     # write to socket
   end
@@ -41,7 +41,7 @@ The server will then continue processing connections until it is signalled to st
 ### Handling Connections
 
 ```ruby
-def serve(socket)
+def serve!(socket)
   message = socket.read
   socket.write(message)
 end
