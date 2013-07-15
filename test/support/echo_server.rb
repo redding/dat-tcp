@@ -3,7 +3,7 @@ require 'dat-tcp'
 class EchoServer
   include DatTCP::Server
 
-  def serve(socket)
+  def serve!(socket)
     socket.write(socket.read)
     socket.close_write
   end

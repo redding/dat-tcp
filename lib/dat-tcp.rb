@@ -1,10 +1,10 @@
+require 'dat-worker-pool'
 require 'ostruct'
 require 'socket'
 require 'thread'
 
 require 'dat-tcp/version'
 require 'dat-tcp/logger'
-require 'dat-tcp/worker_pool'
 
 module DatTCP
 
@@ -103,7 +103,7 @@ module DatTCP
     end
 
     def client_file_descriptors
-      @worker_pool ? @worker_pool.connections.map(&:fileno) : []
+      @worker_pool ? @worker_pool.work_items.map(&:fileno) : []
     end
 
     def listening?
@@ -114,8 +114,14 @@ module DatTCP
       !!@work_loop_thread
     end
 
-    # This method should be overwritten to handle new connections
     def serve(socket)
+      self.serve!(socket)
+    ensure
+      socket.close rescue false
+    end
+
+    # This method should be overwritten to handle new connections
+    def serve!(socket)
     end
 
     # Hooks
@@ -156,10 +162,10 @@ module DatTCP
     def work_loop(client_file_descriptors = nil)
       self.logger.info "Starting work loop..."
       pool_args = [ @min_workers, @max_workers, @debug ]
-      @worker_pool = DatTCP::WorkerPool.new(*pool_args){|socket| serve(socket) }
+      @worker_pool = DatWorkerPool.new(*pool_args){|socket| serve(socket) }
       self.enqueue_file_descriptors(client_file_descriptors || [])
       while @state.run?
-        @worker_pool.enqueue_connection self.accept_connection
+        @worker_pool.add_work self.accept_connection
       end
       self.logger.info "Stopping work loop..."
       shutdown_worker_pool if !@state.halt?
@@ -175,7 +181,7 @@ module DatTCP
 
     def enqueue_file_descriptors(file_descriptors)
       file_descriptors.each do |file_descriptor|
-        @worker_pool.enqueue_connection TCPSocket.for_fd(file_descriptor)
+        @worker_pool.add_work TCPSocket.for_fd(file_descriptor)
       end
     end
 

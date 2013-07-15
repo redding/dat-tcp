@@ -110,7 +110,8 @@ module Bench
       [ "QUIT", "INT", "TERM" ].each do |name|
         Signal.trap(name){ server.stop }
       end
-      server.run(*host_and_port).join
+      server.listen(*host_and_port)
+      server.run.join
       self.write_report(server)
     end
 
