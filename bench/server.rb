@@ -14,7 +14,7 @@ module Bench
       @processing_times = []
     end
 
-    def serve(socket)
+    def serve!(socket)
       benchmark = Benchmark.measure do
         socket.write(socket.read)
       end
