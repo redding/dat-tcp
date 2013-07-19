@@ -12,6 +12,7 @@ Gem::Specification.new do |gem|
                       " designed for use as a base for application servers."
   gem.summary       = "A generic threaded TCP server API"
   gem.homepage      = "https://github.com/redding/dat-tcp"
+  gem.license       = 'MIT'
 
   gem.files         = `git ls-files -- lib/* Gemfile Rakefile *.gemspec`.split($/)
   gem.executables   = gem.files.grep(%r{^bin/}).map{ |f| File.basename(f) }
