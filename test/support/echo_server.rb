@@ -1,11 +1,10 @@
 require 'dat-tcp'
 
-class EchoServer
-  include DatTCP::Server
-
-  def serve!(socket)
-    socket.write(socket.read)
-    socket.close_write
+module EchoServer
+  def self.new(*args)
+    DatTCP::Server.new(*args) do |socket|
+      socket.write(socket.read)
+    end
   end
 
   module Helpers
