@@ -2,6 +2,7 @@ namespace :bench do
 
   task :load do
     require 'bench/runner'
+    GC.disable
   end
 
   desc "Start the Benchmark echo server"
