@@ -1,13 +1,12 @@
 require 'assert'
-require 'test/support/test_server'
 require 'dat-tcp'
 
 module DatTCP
 
-  class BaseTests < Assert::Context
+  class UnitTests < Assert::Context
     desc "DatTCP"
     setup do
-      @server = TestServer.new({ :ready_timeout => 0 })
+      @server = DatTCP::Server.new({ :ready_timeout => 0 }){ |s| }
     end
     subject{ @server }
 
@@ -28,8 +27,8 @@ module DatTCP
     end
 
     should "raise an argument error when listen is called with no arguments" do
-      assert_raises(DatTCP::InvalidListenArgsError){ subject.listen }
-      assert_raises(DatTCP::InvalidListenArgsError){ subject.listen(1, 2, 3) }
+      assert_raises(ArgumentError){ subject.listen }
+      assert_raises(ArgumentError){ subject.listen(1, 2, 3) }
     end
 
     should "raise an exception when run is called without calling listen" do
@@ -38,7 +37,7 @@ module DatTCP
 
   end
 
-  class ListenTests < BaseTests
+  class ListenTests < UnitTests
     desc "listen"
     setup do
       @server.listen('localhost', 45678)
@@ -59,14 +58,15 @@ module DatTCP
       end
     end
 
-    should "have called on_listen but no other hooks" do
-      assert_equal true, subject.on_listen_called
-      assert_instance_of TCPServer, subject.configure_tcp_server_called
-      assert_nil subject.on_run_called
-      assert_nil subject.on_pause_called
-      assert_nil subject.on_stop_called
-      assert_nil subject.on_halt_called
-    end
+    # TODO - planning on changing callbacks, not going to test it this way
+    # should "have called on_listen but no other hooks" do
+    #   assert_equal true, subject.on_listen_called
+    #   assert_instance_of TCPServer, subject.configure_tcp_server_called
+    #   assert_nil subject.on_run_called
+    #   assert_nil subject.on_pause_called
+    #   assert_nil subject.on_stop_called
+    #   assert_nil subject.on_halt_called
+    # end
 
     should "be able to call run after it" do
       assert_nothing_raised{ subject.run }
@@ -81,7 +81,7 @@ module DatTCP
 
   end
 
-  class RunTests < BaseTests
+  class RunTests < UnitTests
     desc "run"
     setup do
       @server.listen('localhost', 45678)
@@ -102,18 +102,19 @@ module DatTCP
       assert_equal true, subject.running?
     end
 
-    should "have called on_listen and on_run but no other hooks" do
-      assert_equal true, subject.on_listen_called
-      assert_instance_of TCPServer, subject.configure_tcp_server_called
-      assert_equal true, subject.on_run_called
-      assert_nil subject.on_pause_called
-      assert_nil subject.on_stop_called
-      assert_nil subject.on_halt_called
-    end
+    # TODO - planning on changing callbacks, not going to test it this way
+    # should "have called on_listen and on_run but no other hooks" do
+    #   assert_equal true, subject.on_listen_called
+    #   assert_instance_of TCPServer, subject.configure_tcp_server_called
+    #   assert_equal true, subject.on_run_called
+    #   assert_nil subject.on_pause_called
+    #   assert_nil subject.on_stop_called
+    #   assert_nil subject.on_halt_called
+    # end
 
   end
 
-  class PauseTests < BaseTests
+  class PauseTests < UnitTests
     desc "pause"
     setup do
       @server.listen('localhost', 45678)
@@ -134,18 +135,19 @@ module DatTCP
       assert_equal false, subject.running?
     end
 
-    should "have called on_listen, on_run and on_pause but no other hooks" do
-      assert_equal true, subject.on_listen_called
-      assert_instance_of TCPServer, subject.configure_tcp_server_called
-      assert_equal true, subject.on_run_called
-      assert_equal true, subject.on_pause_called
-      assert_nil subject.on_stop_called
-      assert_nil subject.on_halt_called
-    end
+    # TODO - planning on changing callbacks, not going to test it this way
+    # should "have called on_listen, on_run and on_pause but no other hooks" do
+    #   assert_equal true, subject.on_listen_called
+    #   assert_instance_of TCPServer, subject.configure_tcp_server_called
+    #   assert_equal true, subject.on_run_called
+    #   assert_equal true, subject.on_pause_called
+    #   assert_nil subject.on_stop_called
+    #   assert_nil subject.on_halt_called
+    # end
 
   end
 
-  class StopTests < BaseTests
+  class StopTests < UnitTests
     desc "stop"
     setup do
       @server.listen('localhost', 45678)
@@ -163,18 +165,19 @@ module DatTCP
       assert_equal false, subject.running?
     end
 
-    should "have called on_listen, on_run and on_pause but no other hooks" do
-      assert_equal true, subject.on_listen_called
-      assert_instance_of TCPServer, subject.configure_tcp_server_called
-      assert_equal true, subject.on_run_called
-      assert_nil subject.on_pause_called
-      assert_equal true, subject.on_stop_called
-      assert_nil subject.on_halt_called
-    end
+    # TODO - planning on changing callbacks, not going to test it this way
+    # should "have called on_listen, on_run and on_pause but no other hooks" do
+    #   assert_equal true, subject.on_listen_called
+    #   assert_instance_of TCPServer, subject.configure_tcp_server_called
+    #   assert_equal true, subject.on_run_called
+    #   assert_nil subject.on_pause_called
+    #   assert_equal true, subject.on_stop_called
+    #   assert_nil subject.on_halt_called
+    # end
 
   end
 
-  class HaltTests < BaseTests
+  class HaltTests < UnitTests
     desc "halt"
     setup do
       @server.listen('localhost', 45678)
@@ -192,25 +195,27 @@ module DatTCP
       assert_equal false, subject.running?
     end
 
-    should "have called on_listen, on_run and on_pause but no other hooks" do
-      assert_equal true, subject.on_listen_called
-      assert_instance_of TCPServer, subject.configure_tcp_server_called
-      assert_equal true, subject.on_run_called
-      assert_nil subject.on_pause_called
-      assert_nil subject.on_stop_called
-      assert_equal true, subject.on_halt_called
-    end
+    # TODO - planning on changing callbacks, not going to test it this way
+    # should "have called on_listen, on_run and on_pause but no other hooks" do
+    #   assert_equal true, subject.on_listen_called
+    #   assert_instance_of TCPServer, subject.configure_tcp_server_called
+    #   assert_equal true, subject.on_run_called
+    #   assert_nil subject.on_pause_called
+    #   assert_nil subject.on_stop_called
+    #   assert_equal true, subject.on_halt_called
+    # end
 
   end
 
-  class FileDescriptorsTests < BaseTests
+  class FileDescriptorsTests < UnitTests
     desc "file descriptor handling"
     setup do
-      @server = TestServer.new({
+      options = {
         :ready_timeout => 0,
         :min_workers   => 0,
         :max_workers   => 0
-      })
+      }
+      @server = DatTCP::Server.new(options){ |s| }
       @server.listen('localhost', 44375)
       @thread = @server.run
       @client_socket = TCPSocket.new('localhost', 44375)
@@ -237,7 +242,9 @@ module DatTCP
       server_file_descriptor = @server.file_descriptor
       client_file_descriptors = @server.client_file_descriptors
 
-      new_server = TestServer.new({ :ready_timeout => 0 })
+      new_server = DatTCP::Server.new({ :ready_timeout => 0 }) do |s|
+        s.write('handled')
+      end
       new_server.listen(server_file_descriptor)
       thread = new_server.run(client_file_descriptors)
 

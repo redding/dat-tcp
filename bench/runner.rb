@@ -106,13 +106,12 @@ module Bench
     def run_server
       require 'bench/server'
       host_and_port = HOST_AND_PORT.dup
-      server = Bench::Server.new({ :debug => !!ENV['DEBUG'] })
+      bench_server = Bench::Server.new({ :debug => !!ENV['DEBUG'] })
       [ "QUIT", "INT", "TERM" ].each do |name|
-        Signal.trap(name){ server.stop }
+        Signal.trap(name){ bench_server.stop }
       end
-      server.listen(*host_and_port)
-      server.run.join
-      self.write_report(server)
+      bench_server.start(*host_and_port)
+      self.write_report(bench_server)
     end
 
     def write_report(server)
