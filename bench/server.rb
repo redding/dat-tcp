@@ -4,20 +4,26 @@ require 'dat-tcp'
 module Bench
 
   class Server
-    include DatTCP::Server
 
     attr_reader :processing_times
 
     def initialize(*args)
-      super
+      @server = DatTCP::Server.new(*args){ |s| serve(s) }
       @times_mutex = Mutex.new
       @processing_times = []
     end
 
-    def serve!(socket)
-      benchmark = Benchmark.measure do
-        socket.write(socket.read)
-      end
+    def start(*args)
+      @server.listen(*args)
+      @server.run.join
+    end
+
+    def stop
+      @server.stop
+    end
+
+    def serve(socket)
+      benchmark = Benchmark.measure{ socket.write(socket.read) }
       @times_mutex.synchronize{ @processing_times << benchmark.real }
     end
 

@@ -1,5 +1,4 @@
 require 'dat-worker-pool'
-require 'ostruct'
 require 'socket'
 require 'thread'
 
@@ -8,18 +7,18 @@ require 'dat-tcp/logger'
 
 module DatTCP
 
-  module Server
+  class Server
 
     attr_reader :logger
 
-    def initialize(config = nil)
-      config = OpenStruct.new(config || {})
-      @backlog_size     = config.backlog_size     || 1024
-      @debug            = config.debug            || false
-      @min_workers      = config.min_workers      || 2
-      @max_workers      = config.max_workers      || 4
-      @ready_timeout    = config.ready_timeout    || 1
-      @shutdown_timeout = config.shutdown_timeout || 15
+    def initialize(config = nil, &serve_proc)
+      @backlog_size     = config[:backlog_size]     || 1024
+      @debug            = config[:debug]            || false
+      @min_workers      = config[:min_workers]      || 2
+      @max_workers      = config[:max_workers]      || 4
+      @ready_timeout    = config[:ready_timeout]    || 1
+      @shutdown_timeout = config[:shutdown_timeout] || 15
+      @serve_proc = serve_proc || raise(ArgumentError, "no block given")
 
       @logger = DatTCP::Logger.new(@debug)
 
@@ -43,20 +42,17 @@ module DatTCP
     #                  port.
 
     def listen(*args)
-      build_server_method = if args.size == 2
-        :new
-      elsif args.size == 1
-        :for_fd
-      else
-        raise InvalidListenArgsError.new
-      end
       set_state :listen
       run_hook 'on_listen'
-      @tcp_server = TCPServer.send(build_server_method, *args)
-
+      @tcp_server = if args.size == 1
+        TCPServer.for_fd(*args)
+      elsif args.size == 2
+        TCPServer.new(*args)
+      else
+        raise ArgumentError, "takes an ip and port or a file descriptor"
+      end
       @tcp_server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true)
       run_hook 'configure_tcp_server', @tcp_server
-
       @tcp_server.listen(@backlog_size)
     end
 
@@ -115,13 +111,9 @@ module DatTCP
     end
 
     def serve(socket)
-      self.serve!(socket)
+      @serve_proc.call(socket)
     ensure
       socket.close rescue false
-    end
-
-    # This method should be overwritten to handle new connections
-    def serve!(socket)
     end
 
     # Hooks
@@ -162,7 +154,7 @@ module DatTCP
     def work_loop(client_file_descriptors = nil)
       self.logger.info "Starting work loop..."
       pool_args = [ @min_workers, @max_workers, @debug ]
-      @worker_pool = DatWorkerPool.new(*pool_args){|socket| serve(socket) }
+      @worker_pool = DatWorkerPool.new(*pool_args){ |socket| serve(socket) }
       self.enqueue_file_descriptors(client_file_descriptors || [])
       while @state.run?
         @worker_pool.add_work self.accept_connection
@@ -233,7 +225,6 @@ module DatTCP
     end
 
     class State < String
-
       def initialize(value)
         super value.to_s
       end
@@ -241,25 +232,14 @@ module DatTCP
       [ :listen, :run, :stop, :halt, :pause ].each do |name|
         define_method("#{name}?"){ self.to_sym == name }
       end
-
-    end
-
-  end
-
-  class InvalidListenArgsError < ArgumentError
-
-    def initialize
-      super "invalid arguments, must be either a file descriptor or an ip and port"
     end
 
   end
 
   class NotListeningError < RuntimeError
-
     def initialize
       super "`listen` must be called before calling `run`"
     end
-
   end
 
 end
