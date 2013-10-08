@@ -13,7 +13,7 @@ class EchoServerTests < Assert::Context
     @server = EchoServer.new({ :ready_timeout => 0.1, :debug => !!ENV['DEBUG'] })
   end
   teardown do
-    @server.stop
+    @server.stop true
   end
 
   should "have started a separate thread for running the server" do

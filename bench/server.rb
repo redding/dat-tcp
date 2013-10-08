@@ -19,7 +19,7 @@ module Bench
     end
 
     def stop
-      @server.stop
+      @server.stop true
     end
 
     def serve(socket)
