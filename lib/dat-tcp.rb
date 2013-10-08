@@ -28,27 +28,11 @@ module DatTCP
       set_state :stop
     end
 
-    # `setsockopt` values:
-    # * SOL_SOCKET   - specifies the protocol layer the option applies to.
-    #                  SOL_SOCKET is basic socket options (as opposed to
-    #                  something like IPPROTO_TCP for TCP socket options).
-    # * SO_REUSEADDR - indicates that the rules used in validating addresses
-    #                  supplied in a bind(2) call should allow reuse of local
-    #                  addresses. This will allow us to re-bind to a port if we
-    #                  were shutdown and started right away. This will still
-    #                  throw an "address in use" if a socket is active on the
-    #                  port.
     def listen(*args)
       set_state :listen
       run_hook 'on_listen'
-      @tcp_server = if args.size == 1
-        TCPServer.for_fd(*args)
-      elsif args.size == 2
-        TCPServer.new(*args)
-      else
-        raise ArgumentError, "takes an ip and port or a file descriptor"
-      end
-      @tcp_server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true)
+      @tcp_server = TCPServer.build(*args)
+      raise ArgumentError, "takes ip and port or file descriptor" if !@tcp_server
       run_hook 'configure_tcp_server', @tcp_server
       @tcp_server.listen(@backlog_size)
     end
@@ -220,6 +204,40 @@ module DatTCP
 
       [ :listen, :start, :stop, :halt, :pause ].each do |name|
         define_method("#{name}?"){ self.to_sym == name }
+      end
+    end
+
+    module TCPServer
+      def self.build(*args)
+        case args.size
+        when 2
+          self.new(*args)
+        when 1
+          self.for_fd(*args)
+        end
+      end
+
+      def self.new(ip, port)
+        configure(::TCPServer.new(ip, port))
+      end
+
+      def self.for_fd(file_descriptor)
+        configure(::TCPServer.for_fd(file_descriptor))
+      end
+
+      # `setsockopt` values:
+      # * SOL_SOCKET   - specifies the protocol layer the option applies to.
+      #                  SOL_SOCKET is basic socket options (as opposed to
+      #                  something like IPPROTO_TCP for TCP socket options).
+      # * SO_REUSEADDR - indicates that the rules used in validating addresses
+      #                  supplied in a bind(2) call should allow reuse of local
+      #                  addresses. This will allow us to re-bind to a port if
+      #                  we were shutdown and started right away. This will
+      #                  still throw an "address in use" if a socket is active
+      #                  on the port.
+      def self.configure(tcp_server)
+        tcp_server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true)
+        tcp_server
       end
     end
 
