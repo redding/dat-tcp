@@ -15,7 +15,7 @@ module Bench
 
     def start(*args)
       @server.listen(*args)
-      @server.run.join
+      @server.start.join
     end
 
     def stop

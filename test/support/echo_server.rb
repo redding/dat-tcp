@@ -14,7 +14,7 @@ module EchoServer
         pid = fork do
           server.listen(*args)
           trap("TERM"){ server.stop }
-          server.run.join
+          server.start.join
         end
         sleep 0.3 # Give time for the socket to start listening.
         yield
