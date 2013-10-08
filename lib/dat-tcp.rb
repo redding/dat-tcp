@@ -13,6 +13,7 @@ module DatTCP
     private :logger
 
     def initialize(config = nil, &serve_proc)
+      config ||= {}
       @backlog_size     = config[:backlog_size]     || 1024
       @debug            = config[:debug]            || false
       @min_workers      = config[:min_workers]      || 2
@@ -27,6 +28,30 @@ module DatTCP
       @work_loop_thread = nil
       @worker_pool      = nil
       @signal = Signal.new(:stop)
+    end
+
+    def ip
+      @tcp_server.addr[2] if self.listening?
+    end
+
+    def port
+      @tcp_server.addr[1] if self.listening?
+    end
+
+    def file_descriptor
+      @tcp_server.fileno if self.listening?
+    end
+
+    def client_file_descriptors
+      @worker_pool ? @worker_pool.work_items.map(&:fileno) : []
+    end
+
+    def listening?
+      !!@tcp_server
+    end
+
+    def running?
+      !!(@work_loop_thread && @work_loop_thread.alive?)
     end
 
     def listen(*args)
@@ -68,30 +93,6 @@ module DatTCP
       wait_for_shutdown if wait
     end
 
-    def ip
-      @tcp_server.addr[2] if self.listening?
-    end
-
-    def port
-      @tcp_server.addr[1] if self.listening?
-    end
-
-    def file_descriptor
-      @tcp_server.fileno if self.listening?
-    end
-
-    def client_file_descriptors
-      @worker_pool ? @worker_pool.work_items.map(&:fileno) : []
-    end
-
-    def listening?
-      !!@tcp_server
-    end
-
-    def running?
-      !!(@work_loop_thread && @work_loop_thread.alive?)
-    end
-
     # Hooks
 
     def on_listen
@@ -114,13 +115,10 @@ module DatTCP
 
     def inspect
       reference = '0x0%x' % (self.object_id << 1)
-      "#<#{self.class}:#{reference}".tap do |inspect_str|
-        if listening?
-          port, ip = @tcp_server.addr[1, 2]
-          inspect_str << " @ip=#{ip.inspect} @port=#{port.inspect}"
-        end
-        inspect_str << " @work_loop_status=#{@work_loop_thread.status.inspect}" if running?
-        inspect_str << ">"
+      "#<#{self.class}:#{reference}".tap do |s|
+        s << " @ip=#{ip.inspect} @port=#{port.inspect}"
+        s << " @work_loop_status=#{@work_loop_thread.status.inspect}" if running?
+        s << ">"
       end
     end
 

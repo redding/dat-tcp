@@ -19,7 +19,7 @@ Gem::Specification.new do |gem|
   gem.test_files    = gem.files.grep(%r{^(test|spec|features)/})
   gem.require_paths = ["lib"]
 
-  gem.add_dependency("dat-worker-pool", ["~> 0.2"])
+  gem.add_dependency("dat-worker-pool", ["~> 0.3"])
 
   gem.add_development_dependency('assert',        ['~> 2.3'])
   gem.add_development_dependency('assert-mocha',  ['~> 1.0'])

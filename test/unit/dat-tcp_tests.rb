@@ -1,22 +1,41 @@
 require 'assert'
 require 'dat-tcp'
 
+require 'dat-worker-pool/worker_pool_spy'
+require 'test/support/tcp_server_spy'
+
 module DatTCP
 
   class UnitTests < Assert::Context
     desc "DatTCP::Server"
     setup do
-      @server = DatTCP::Server.new({ :ready_timeout => 0 }){ |s| }
+      @min_workers = 1
+      @max_workers = 1
+      @shutdown_timeout = 1
+      options = {
+        :min_workers => @min_workers,
+        :max_workers => @max_workers,
+        :shutdown_timeout => @shutdown_timeout
+      }
+      @server = DatTCP::Server.new(options){ |s| }
     end
     subject{ @server }
 
-    should have_imeths :listen, :start, :pause, :stop, :halt, :stop_listen
+    should have_imeths :listen, :start
+    should have_imeths :pause, :stop, :halt, :stop_listen
     should have_imeths :listening?, :running?
     should have_imeths :on_listen, :on_start, :on_pause, :on_stop, :on_halt
     should have_imeths :ip, :port, :file_descriptor
     should have_imeths :client_file_descriptors
 
-    should "not be listening or running" do
+    should "not know it's ip, port, file descriptor or client file descriptors" do
+      assert_nil subject.ip
+      assert_nil subject.port
+      assert_nil subject.file_descriptor
+      assert_equal [], subject.client_file_descriptors
+    end
+
+    should "not be connected or running by default" do
       assert_equal false, subject.listening?
       assert_equal false, subject.running?
     end
@@ -32,13 +51,48 @@ module DatTCP
 
   end
 
-  class ListenTests < UnitTests
-    desc "listen"
+  class ListenAndRunningTests < UnitTests
     setup do
-      @server.listen('localhost', 45678)
+      @tcp_server_spy = TCPServerSpy.new.tap do |server|
+        @server_ip     = server.ip
+        @server_port   = server.port
+        @server_fileno = server.fileno
+      end
+      @worker_pool_spy = DatWorkerPool::WorkerPoolSpy.new
+
+      ::TCPServer.stubs(:new).tap do |s|
+        s.with(@server_ip, @server_port)
+        s.returns(@tcp_server_spy)
+      end
+      ::TCPServer.stubs(:for_fd).tap do |s|
+        s.with(@server_fileno)
+        s.returns(@tcp_server_spy)
+      end
+      DatWorkerPool.stubs(:new).tap do |s|
+        s.with(@min_workers, @max_workers)
+        s.returns(@worker_pool_spy)
+      end
+      IOSelectStub.clients_unavailable(@tcp_server_spy, 1)
     end
     teardown do
-      @server.stop_listen
+      @server.stop(true) rescue false
+      IOSelectStub.remove
+      DatWorkerPool.unstub(:new)
+      ::TCPServer.unstub(:for_fd)
+      ::TCPServer.unstub(:new)
+    end
+  end
+
+  class ListenTests < ListenAndRunningTests
+    desc "when listen is called"
+    setup do
+      @server.listen(@server_ip, @server_port)
+    end
+
+    should "know it's ip, port and file descriptor" do
+      assert_equal @tcp_server_spy.ip,     subject.ip
+      assert_equal @tcp_server_spy.port,   subject.port
+      assert_equal @tcp_server_spy.fileno, subject.file_descriptor
     end
 
     should "be listening but not running" do
@@ -46,11 +100,16 @@ module DatTCP
       assert_equal false, subject.running?
     end
 
-    should "have created an instance of a TCP Server and started listening" do
-      assert_nothing_raised do
-        socket = TCPSocket.new('localhost', 45678)
-        socket.close
+    should "have it's TCPServer listening" do
+      assert @tcp_server_spy.listening
+      assert_equal 1024, @tcp_server_spy.backlog_size
+    end
+
+    should "set the TCPServer's Socket::SO_REUSEADDR option to true" do
+      option = @tcp_server_spy.socket_options.detect do |opt|
+        opt.level == Socket::SOL_SOCKET && opt.name == Socket::SO_REUSEADDR
       end
+      assert_equal true, option.value
     end
 
     # TODO - planning on changing callbacks, not going to test it this way
@@ -63,28 +122,32 @@ module DatTCP
     #   assert_nil subject.on_halt_called
     # end
 
-    should "be able to call start after it" do
-      assert_nothing_raised{ subject.start }
-      assert subject.running?
-      subject.pause true
+  end
+
+  class ListenWithFileDescriptorTests < ListenAndRunningTests
+    desc "when listen is called with a file descriptor"
+    setup do
+      @server.listen(@server_fileno)
     end
 
-    should "allow retrieving it's ip and port" do
-      assert_equal 'localhost', subject.ip
-      assert_equal 45678,       subject.port
+    should "know it's ip, port and file descriptor" do
+      assert_equal @tcp_server_spy.ip,     subject.ip
+      assert_equal @tcp_server_spy.port,   subject.port
+      assert_equal @tcp_server_spy.fileno, subject.file_descriptor
+    end
+
+    should "be listening but not running" do
+      assert_equal true,  subject.listening?
+      assert_equal false, subject.running?
     end
 
   end
 
-  class StartTests < UnitTests
-    desc "start"
+  class StartTests < ListenAndRunningTests
+    desc "when start is called"
     setup do
-      @server.listen('localhost', 45678)
+      @server.listen(@server_ip, @server_port)
       @thread = @server.start
-    end
-    teardown do
-      @server.stop true
-      @thread.join
     end
 
     should "return a thread for running the server" do
@@ -109,50 +172,71 @@ module DatTCP
 
   end
 
-  class PauseTests < UnitTests
-    desc "pause"
+  class WorkLoopWithWorkTests < ListenAndRunningTests
+    desc "when started and a client has connected"
     setup do
-      @server.listen('localhost', 45678)
+      @client = FakeSocket.new
+      @tcp_server_spy.connected_sockets << @client
+      IOSelectStub.clients_available(@tcp_server_spy, 1)
+      @server.listen(@server_ip, @server_port)
       @thread = @server.start
+    end
+
+    should "accept connections and add them to the worker pool" do
+      assert_includes @client, @worker_pool_spy.work_items
+    end
+
+    should "allow retrieving the client sockets file descriptors" do
+      assert_includes @client.fileno, subject.client_file_descriptors
+    end
+
+    should "client file descriptors should still be accessible after its paused" do
       @server.pause true
-      @thread.join
+      assert_includes @client.fileno, subject.client_file_descriptors
     end
-    teardown do
-      @server.stop_listen
-    end
-
-    should "stop the thread" do
-      assert !@thread.alive?
-    end
-
-    should "be listening but not running" do
-      assert_equal true,  subject.listening?
-      assert_equal false, subject.running?
-    end
-
-    # TODO - planning on changing callbacks, not going to test it this way
-    # should "have called on_listen, on_run and on_pause but no other hooks" do
-    #   assert_equal true, subject.on_listen_called
-    #   assert_instance_of TCPServer, subject.configure_tcp_server_called
-    #   assert_equal true, subject.on_run_called
-    #   assert_equal true, subject.on_pause_called
-    #   assert_nil subject.on_stop_called
-    #   assert_nil subject.on_halt_called
-    # end
 
   end
 
-  class StopTests < UnitTests
-    desc "stop"
+  class StartWithClientFileDescriptorTests < ListenAndRunningTests
+    desc "when start is called and given client file descriptors"
     setup do
-      @server.listen('localhost', 45678)
-      @thread = @server.start
-      @server.stop true
-      @thread.join
+      @clients = [*1..2].map do |n|
+        client = FakeSocket.new
+        TCPSocket.stubs(:for_fd).with(client.fileno).returns(client)
+        client
+      end
+      @server.listen(@server_ip, @server_port)
+      @thread = @server.start(@clients.map(&:fileno))
+    end
+    teardown do
+      TCPSocket.unstub(:for_fd)
     end
 
-    should "stop the thread" do
-      assert !@thread.alive?
+    should "add the clients to the worker pool" do
+      @clients.each{ |c| assert_includes c, @worker_pool_spy.work_items }
+    end
+
+  end
+
+  class StopTests < ListenAndRunningTests
+    desc "when stop is called"
+    setup do
+      @server.listen(@server_ip, @server_port)
+      @thread = @server.start
+      @server.stop true
+    end
+
+    should "have shutdown the worker pool" do
+      assert @worker_pool_spy.shutdown_called
+      assert_equal @shutdown_timeout, @worker_pool_spy.shutdown_timeout
+    end
+
+    should "have stopped the TCPServer listening" do
+      assert_not @tcp_server_spy.listening
+    end
+
+    should "stop the work loop thread" do
+      assert_not @thread.alive?
     end
 
     should "not be listening or running" do
@@ -172,17 +256,24 @@ module DatTCP
 
   end
 
-  class HaltTests < UnitTests
-    desc "halt"
+  class HaltTests < ListenAndRunningTests
+    desc "when halt is called"
     setup do
-      @server.listen('localhost', 45678)
+      @server.listen(@server_ip, @server_port)
       @thread = @server.start
       @server.halt true
-      @thread.join
     end
 
-    should "stop the thread" do
-      assert !@thread.alive?
+    should "not have shutdown the worker pool" do
+      assert_not @worker_pool_spy.shutdown_called
+    end
+
+    should "have stopped the TCPServer listening" do
+      assert_not @tcp_server_spy.listening
+    end
+
+    should "stop the work loop thread" do
+      assert_not @thread.alive?
     end
 
     should "not be listening or running" do
@@ -202,54 +293,74 @@ module DatTCP
 
   end
 
-  class FileDescriptorsTests < UnitTests
-    desc "file descriptor handling"
+  class PauseTests < ListenAndRunningTests
+    desc "when pause is called"
     setup do
-      options = {
-        :ready_timeout => 0,
-        :min_workers   => 0,
-        :max_workers   => 0
-      }
-      @server = DatTCP::Server.new(options){ |s| }
-      @server.listen('localhost', 44375)
+      @server.listen(@server_ip, @server_port)
       @thread = @server.start
-      @client_socket = TCPSocket.new('localhost', 44375)
-      @thread.join(0.5) # give the server a chance to queue the connection
-    end
-    teardown do
-      @client_socket.close rescue false
-      @server.stop true
-      @thread.join
-    end
-
-    should "allow getting the TCP server's file descriptor" do
-      tcp_server = subject.instance_variable_get("@tcp_server")
-      assert_equal tcp_server.fileno, subject.file_descriptor
-    end
-
-    should "allow retrieving the connections file descriptors" do
-      connections = subject.instance_variable_get("@worker_pool").work_items
-      assert_equal connections.map(&:fileno), subject.client_file_descriptors
-    end
-
-    should "allow building a DatTCP server from file descriptors" do
       @server.pause true
-      server_file_descriptor = @server.file_descriptor
-      client_file_descriptors = @server.client_file_descriptors
-
-      new_server = DatTCP::Server.new({ :ready_timeout => 0 }) do |s|
-        s.write('handled')
-      end
-      new_server.listen(server_file_descriptor)
-      thread = new_server.start(client_file_descriptors)
-
-      value = @client_socket.read if IO.select([ @client_socket ], nil, nil, 2)
-      assert_equal 'handled', value
-      new_server.stop true
-      @server.stop_listen
-      thread.join
     end
 
+    should "have shutdown the worker pool" do
+      assert @worker_pool_spy.shutdown_called
+      assert_equal @shutdown_timeout, @worker_pool_spy.shutdown_timeout
+    end
+
+    should "not have stopped the TCPServer listening" do
+      assert @tcp_server_spy.listening
+    end
+
+    should "stop the work loop thread" do
+      assert_not @thread.alive?
+    end
+
+    should "be listening but not running" do
+      assert_equal true, subject.listening?
+      assert_equal false, subject.running?
+    end
+
+    # TODO - planning on changing callbacks, not going to test it this way
+    # should "have called on_listen, on_run and on_pause but no other hooks" do
+    #   assert_equal true, subject.on_listen_called
+    #   assert_instance_of TCPServer, subject.configure_tcp_server_called
+    #   assert_equal true, subject.on_run_called
+    #   assert_equal true, subject.on_pause_called
+    #   assert_nil subject.on_stop_called
+    #   assert_nil subject.on_halt_called
+    # end
+
+  end
+
+  module IOSelectStub
+    # Stub IO.select to behave how it does for 2 scenarios: clients have
+    # connected and are available OR clients haven't connected and aren't
+    # available
+
+    def self.clients_available(socket, timeout)
+      IO.stubs(:select).tap do |s|
+        s.with([ socket ], nil, nil, timeout)
+        s.returns([ socket ])
+      end
+    end
+
+    def self.clients_unavailable(socket, timeout)
+      IO.stubs(:select).tap do |s|
+        s.with([ socket ], nil, nil, timeout)
+        s.returns(nil)
+      end
+    end
+
+    def self.remove
+      IO.unstub(:select)
+    end
+  end
+
+  class FakeSocket
+    attr_reader :fileno
+
+    def initialize(fileno = nil)
+      @fileno = fileno || rand(999999)
+    end
   end
 
 end
