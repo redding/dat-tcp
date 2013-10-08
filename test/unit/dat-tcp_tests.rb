@@ -4,16 +4,16 @@ require 'dat-tcp'
 module DatTCP
 
   class UnitTests < Assert::Context
-    desc "DatTCP"
+    desc "DatTCP::Server"
     setup do
       @server = DatTCP::Server.new({ :ready_timeout => 0 }){ |s| }
     end
     subject{ @server }
 
     should have_instance_methods :logger
-    should have_instance_methods :listen, :run, :pause, :stop, :halt, :stop_listening
+    should have_instance_methods :listen, :start, :pause, :stop, :halt, :stop_listening
     should have_instance_methods :listening?, :running?
-    should have_instance_methods :on_listen, :on_run, :on_pause, :on_stop, :on_halt
+    should have_instance_methods :on_listen, :on_start, :on_pause, :on_stop, :on_halt
     should have_instance_methods :serve, :ip, :port
     should have_instance_methods :file_descriptor, :client_file_descriptors
 
@@ -31,8 +31,8 @@ module DatTCP
       assert_raises(ArgumentError){ subject.listen(1, 2, 3) }
     end
 
-    should "raise an exception when run is called without calling listen" do
-      assert_raises(DatTCP::NotListeningError){ subject.run }
+    should "raise an exception when start is called without calling listen" do
+      assert_raises(DatTCP::NotListeningError){ subject.start }
     end
 
   end
@@ -68,8 +68,8 @@ module DatTCP
     #   assert_nil subject.on_halt_called
     # end
 
-    should "be able to call run after it" do
-      assert_nothing_raised{ subject.run }
+    should "be able to call start after it" do
+      assert_nothing_raised{ subject.start }
       assert subject.running?
       subject.pause
     end
@@ -85,7 +85,7 @@ module DatTCP
     desc "run"
     setup do
       @server.listen('localhost', 45678)
-      @thread = @server.run
+      @thread = @server.start
     end
     teardown do
       @server.stop
@@ -118,7 +118,7 @@ module DatTCP
     desc "pause"
     setup do
       @server.listen('localhost', 45678)
-      @thread = @server.run
+      @thread = @server.start
       @server.pause
       @thread.join
     end
@@ -151,7 +151,7 @@ module DatTCP
     desc "stop"
     setup do
       @server.listen('localhost', 45678)
-      @thread = @server.run
+      @thread = @server.start
       @server.stop
       @thread.join
     end
@@ -181,7 +181,7 @@ module DatTCP
     desc "halt"
     setup do
       @server.listen('localhost', 45678)
-      @thread = @server.run
+      @thread = @server.start
       @server.halt
       @thread.join
     end
@@ -217,7 +217,7 @@ module DatTCP
       }
       @server = DatTCP::Server.new(options){ |s| }
       @server.listen('localhost', 44375)
-      @thread = @server.run
+      @thread = @server.start
       @client_socket = TCPSocket.new('localhost', 44375)
       @thread.join(0.5) # give the server a chance to queue the connection
     end
@@ -246,7 +246,7 @@ module DatTCP
         s.write('handled')
       end
       new_server.listen(server_file_descriptor)
-      thread = new_server.run(client_file_descriptors)
+      thread = new_server.start(client_file_descriptors)
 
       value = @client_socket.read if IO.select([ @client_socket ], nil, nil, 2)
       assert_equal 'handled', value
