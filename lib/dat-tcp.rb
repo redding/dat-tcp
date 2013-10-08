@@ -53,10 +53,10 @@ module DatTCP
       @tcp_server.listen(@backlog_size)
     end
 
-    def run(client_file_descriptors = nil)
-      raise NotListeningError.new if !self.listening?
-      set_state :run
-      run_hook 'on_run'
+    def start(client_file_descriptors = nil)
+      raise NotListeningError.new unless listening?
+      set_state :start
+      run_hook 'on_start'
       @work_loop_thread = Thread.new{ work_loop(client_file_descriptors) }
     end
 
@@ -121,7 +121,7 @@ module DatTCP
     def configure_tcp_server(tcp_server)
     end
 
-    def on_run
+    def on_start
     end
 
     def on_pause
@@ -153,7 +153,7 @@ module DatTCP
       pool_args = [ @min_workers, @max_workers, @debug ]
       @worker_pool = DatWorkerPool.new(*pool_args){ |socket| serve(socket) }
       self.enqueue_file_descriptors(client_file_descriptors || [])
-      while @state.run?
+      while @state.start?
         @worker_pool.add_work self.accept_connection
       end
       self.logger.info "Stopping work loop..."
@@ -178,7 +178,7 @@ module DatTCP
     # (up to `ready_timeout`) and accept it. `IO.select` with the timeout
     # allows the server to be responsive to shutdowns.
     def accept_connection
-      while @state.run?
+      while @state.start?
         return @tcp_server.accept if self.connection_ready?
       end
     end
@@ -218,7 +218,7 @@ module DatTCP
         super value.to_s
       end
 
-      [ :listen, :run, :stop, :halt, :pause ].each do |name|
+      [ :listen, :start, :stop, :halt, :pause ].each do |name|
         define_method("#{name}?"){ self.to_sym == name }
       end
     end
@@ -227,7 +227,7 @@ module DatTCP
 
   class NotListeningError < RuntimeError
     def initialize
-      super "`listen` must be called before calling `run`"
+      super "server isn't listening, call `listen` first"
     end
   end
 
