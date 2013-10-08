@@ -60,19 +60,19 @@ module DatTCP
       @work_loop_thread = Thread.new{ work_loop(client_file_descriptors) }
     end
 
-    def pause(wait = true)
+    def pause(wait = false)
       set_state :pause
       run_hook 'on_pause'
       wait_for_shutdown if wait
     end
 
-    def stop(wait = true)
+    def stop(wait = false)
       set_state :stop
       run_hook 'on_stop'
       wait_for_shutdown if wait
     end
 
-    def halt(wait = true)
+    def halt(wait = false)
       set_state :halt
       run_hook 'on_halt'
       wait_for_shutdown if wait

@@ -88,7 +88,7 @@ module DatTCP
       @thread = @server.start
     end
     teardown do
-      @server.stop
+      @server.stop true
       @thread.join
     end
 
@@ -119,7 +119,7 @@ module DatTCP
     setup do
       @server.listen('localhost', 45678)
       @thread = @server.start
-      @server.pause
+      @server.pause true
       @thread.join
     end
     teardown do
@@ -152,7 +152,7 @@ module DatTCP
     setup do
       @server.listen('localhost', 45678)
       @thread = @server.start
-      @server.stop
+      @server.stop true
       @thread.join
     end
 
@@ -182,7 +182,7 @@ module DatTCP
     setup do
       @server.listen('localhost', 45678)
       @thread = @server.start
-      @server.halt
+      @server.halt true
       @thread.join
     end
 
@@ -223,7 +223,7 @@ module DatTCP
     end
     teardown do
       @client_socket.close
-      @server.stop
+      @server.stop true
       @thread.join
     end
 
@@ -252,7 +252,7 @@ module DatTCP
       assert_equal 'handled', value
 
       @server.stop_listening
-      new_server.stop
+      new_server.stop true
       thread.join
     end
 
