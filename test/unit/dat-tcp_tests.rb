@@ -10,12 +10,12 @@ module DatTCP
     end
     subject{ @server }
 
-    should have_instance_methods :logger
-    should have_instance_methods :listen, :start, :pause, :stop, :halt, :stop_listening
-    should have_instance_methods :listening?, :running?
-    should have_instance_methods :on_listen, :on_start, :on_pause, :on_stop, :on_halt
-    should have_instance_methods :serve, :ip, :port
-    should have_instance_methods :file_descriptor, :client_file_descriptors
+    should have_imeths :logger
+    should have_imeths :listen, :start, :pause, :stop, :halt, :stop_listening
+    should have_imeths :listening?, :running?
+    should have_imeths :on_listen, :on_start, :on_pause, :on_stop, :on_halt
+    should have_imeths :serve, :ip, :port
+    should have_imeths :file_descriptor, :client_file_descriptors
 
     should "return an instance of DatTCP::Logger::Null with #logger" do
       assert_instance_of DatTCP::Logger::Null, subject.logger
@@ -81,8 +81,8 @@ module DatTCP
 
   end
 
-  class RunTests < UnitTests
-    desc "run"
+  class StartTests < UnitTests
+    desc "start"
     setup do
       @server.listen('localhost', 45678)
       @thread = @server.start
