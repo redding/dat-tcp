@@ -56,10 +56,9 @@ module DatTCP
 
     def listen(*args)
       @signal.set :listen
-      run_hook 'on_listen'
       @tcp_server = TCPServer.build(*args)
       raise ArgumentError, "takes ip and port or file descriptor" if !@tcp_server
-      run_hook 'configure_tcp_server', @tcp_server
+      yield @tcp_server if block_given?
       @tcp_server.listen(@backlog_size)
     end
 
@@ -71,46 +70,22 @@ module DatTCP
     def start(client_file_descriptors = nil)
       raise NotListeningError.new unless listening?
       @signal.set :start
-      run_hook 'on_start'
       @work_loop_thread = Thread.new{ work_loop(client_file_descriptors) }
     end
 
     def pause(wait = false)
       @signal.set :pause
-      run_hook 'on_pause'
       wait_for_shutdown if wait
     end
 
     def stop(wait = false)
       @signal.set :stop
-      run_hook 'on_stop'
       wait_for_shutdown if wait
     end
 
     def halt(wait = false)
       @signal.set :halt
-      run_hook 'on_halt'
       wait_for_shutdown if wait
-    end
-
-    # Hooks
-
-    def on_listen
-    end
-
-    def configure_tcp_server(tcp_server)
-    end
-
-    def on_start
-    end
-
-    def on_pause
-    end
-
-    def on_stop
-    end
-
-    def on_halt
     end
 
     def inspect
@@ -179,10 +154,6 @@ module DatTCP
 
     def wait_for_shutdown
       @work_loop_thread.join if @work_loop_thread
-    end
-
-    def run_hook(method, *args)
-      self.send(method, *args)
     end
 
     class Signal
