@@ -25,11 +25,11 @@ module DatTCP
       @tcp_server       = nil
       @work_loop_thread = nil
       @worker_pool      = nil
-      set_state :stop
+      @signal = Signal.new(:stop)
     end
 
     def listen(*args)
-      set_state :listen
+      @signal.set :listen
       run_hook 'on_listen'
       @tcp_server = TCPServer.build(*args)
       raise ArgumentError, "takes ip and port or file descriptor" if !@tcp_server
@@ -39,25 +39,25 @@ module DatTCP
 
     def start(client_file_descriptors = nil)
       raise NotListeningError.new unless listening?
-      set_state :start
+      @signal.set :start
       run_hook 'on_start'
       @work_loop_thread = Thread.new{ work_loop(client_file_descriptors) }
     end
 
     def pause(wait = false)
-      set_state :pause
+      @signal.set :pause
       run_hook 'on_pause'
       wait_for_shutdown if wait
     end
 
     def stop(wait = false)
-      set_state :stop
+      @signal.set :stop
       run_hook 'on_stop'
       wait_for_shutdown if wait
     end
 
     def halt(wait = false)
-      set_state :halt
+      @signal.set :halt
       run_hook 'on_halt'
       wait_for_shutdown if wait
     end
@@ -88,7 +88,7 @@ module DatTCP
     end
 
     def running?
-      !!@work_loop_thread
+      !!(@work_loop_thread && @work_loop_thread.alive?)
     end
 
     def serve(socket)
@@ -120,12 +120,11 @@ module DatTCP
     def inspect
       reference = '0x0%x' % (self.object_id << 1)
       "#<#{self.class}:#{reference}".tap do |inspect_str|
-        inspect_str << " @state=#{@state.inspect}"
-        if self.listening?
+        if listening?
           port, ip = @tcp_server.addr[1, 2]
           inspect_str << " @ip=#{ip.inspect} @port=#{port.inspect}"
         end
-        inspect_str << " @work_loop_status=#{@work_loop_thread.status.inspect}" if self.running?
+        inspect_str << " @work_loop_status=#{@work_loop_thread.status.inspect}" if running?
         inspect_str << ">"
       end
     end
@@ -137,17 +136,17 @@ module DatTCP
       pool_args = [ @min_workers, @max_workers, @debug ]
       @worker_pool = DatWorkerPool.new(*pool_args){ |socket| serve(socket) }
       self.enqueue_file_descriptors(client_file_descriptors || [])
-      while @state.start?
+      while @signal.start?
         @worker_pool.add_work self.accept_connection
       end
       self.logger.info "Stopping work loop..."
-      shutdown_worker_pool if !@state.halt?
+      shutdown_worker_pool unless @signal.halt?
     rescue Exception => exception
       self.logger.error "Exception occurred, stopping server!"
       self.logger.error "#{exception.class}: #{exception.message}"
       self.logger.error exception.backtrace.join("\n")
     ensure
-      close_connection if !@state.pause?
+      close_connection unless @signal.pause?
       clear_thread
       self.logger.info "Stopped work loop"
     end
@@ -162,7 +161,7 @@ module DatTCP
     # (up to `ready_timeout`) and accept it. `IO.select` with the timeout
     # allows the server to be responsive to shutdowns.
     def accept_connection
-      while @state.start?
+      while @signal.start?
         return @tcp_server.accept if self.connection_ready?
       end
     end
@@ -193,17 +192,34 @@ module DatTCP
       self.send(method, *args)
     end
 
-    def set_state(name)
-      @state = State.new(name)
-    end
-
-    class State < String
+    class Signal
       def initialize(value)
-        super value.to_s
+        @value = value
+        @mutex = Mutex.new
       end
 
-      [ :listen, :start, :stop, :halt, :pause ].each do |name|
-        define_method("#{name}?"){ self.to_sym == name }
+      def set(value)
+        @mutex.synchronize{ @value = value }
+      end
+
+      def listen?
+        @mutex.synchronize{ @value == :listen }
+      end
+
+      def start?
+        @mutex.synchronize{ @value == :start }
+      end
+
+      def pause?
+        @mutex.synchronize{ @value == :pause }
+      end
+
+      def stop?
+        @mutex.synchronize{ @value == :stop }
+      end
+
+      def halt?
+        @mutex.synchronize{ @value == :halt }
       end
     end
 
