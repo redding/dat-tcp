@@ -10,6 +10,7 @@ module DatTCP
   class Server
 
     attr_reader :logger
+    private :logger
 
     def initialize(config = nil, &serve_proc)
       @backlog_size     = config[:backlog_size]     || 1024
@@ -37,6 +38,11 @@ module DatTCP
       @tcp_server.listen(@backlog_size)
     end
 
+    def stop_listen
+      @tcp_server.close rescue false
+      @tcp_server = nil
+    end
+
     def start(client_file_descriptors = nil)
       raise NotListeningError.new unless listening?
       @signal.set :start
@@ -62,11 +68,6 @@ module DatTCP
       wait_for_shutdown if wait
     end
 
-    def stop_listening
-      @tcp_server.close rescue false
-      @tcp_server = nil
-    end
-
     def ip
       @tcp_server.addr[2] if self.listening?
     end
@@ -89,12 +90,6 @@ module DatTCP
 
     def running?
       !!(@work_loop_thread && @work_loop_thread.alive?)
-    end
-
-    def serve(socket)
-      @serve_proc.call(socket)
-    ensure
-      socket.close rescue false
     end
 
     # Hooks
@@ -129,26 +124,35 @@ module DatTCP
       end
     end
 
-    protected
+    private
+
+    def serve(socket)
+      @serve_proc.call(socket)
+    ensure
+      socket.close rescue false
+    end
 
     def work_loop(client_file_descriptors = nil)
-      self.logger.info "Starting work loop..."
+      logger.info "Starting work loop..."
       pool_args = [ @min_workers, @max_workers, @debug ]
       @worker_pool = DatWorkerPool.new(*pool_args){ |socket| serve(socket) }
-      self.enqueue_file_descriptors(client_file_descriptors || [])
+      enqueue_file_descriptors(client_file_descriptors || [])
       while @signal.start?
-        @worker_pool.add_work self.accept_connection
+        @worker_pool.add_work accept_connection
       end
-      self.logger.info "Stopping work loop..."
+      logger.info "Stopping work loop..."
       shutdown_worker_pool unless @signal.halt?
     rescue Exception => exception
-      self.logger.error "Exception occurred, stopping server!"
-      self.logger.error "#{exception.class}: #{exception.message}"
-      self.logger.error exception.backtrace.join("\n")
+      logger.error "Exception occurred, stopping server!"
+      logger.error "#{exception.class}: #{exception.message}"
+      logger.error exception.backtrace.join("\n")
     ensure
-      close_connection unless @signal.pause?
+      unless @signal.pause?
+        logger.info "Closing TCP server connection"
+        stop_listen
+      end
       clear_thread
-      self.logger.info "Stopped work loop"
+      logger.info "Stopped work loop"
     end
 
     def enqueue_file_descriptors(file_descriptors)
@@ -162,7 +166,7 @@ module DatTCP
     # allows the server to be responsive to shutdowns.
     def accept_connection
       while @signal.start?
-        return @tcp_server.accept if self.connection_ready?
+        return @tcp_server.accept if connection_ready?
       end
     end
 
@@ -171,13 +175,8 @@ module DatTCP
     end
 
     def shutdown_worker_pool
-      self.logger.info "Shutting down worker pool, letting it finish..."
+      logger.info "Shutting down worker pool"
       @worker_pool.shutdown(@shutdown_timeout)
-    end
-
-    def close_connection
-      self.logger.info "Closing TCP server connection..."
-      self.stop_listening
     end
 
     def clear_thread

@@ -10,16 +10,11 @@ module DatTCP
     end
     subject{ @server }
 
-    should have_imeths :logger
-    should have_imeths :listen, :start, :pause, :stop, :halt, :stop_listening
+    should have_imeths :listen, :start, :pause, :stop, :halt, :stop_listen
     should have_imeths :listening?, :running?
     should have_imeths :on_listen, :on_start, :on_pause, :on_stop, :on_halt
-    should have_imeths :serve, :ip, :port
-    should have_imeths :file_descriptor, :client_file_descriptors
-
-    should "return an instance of DatTCP::Logger::Null with #logger" do
-      assert_instance_of DatTCP::Logger::Null, subject.logger
-    end
+    should have_imeths :ip, :port, :file_descriptor
+    should have_imeths :client_file_descriptors
 
     should "not be listening or running" do
       assert_equal false, subject.listening?
@@ -43,7 +38,7 @@ module DatTCP
       @server.listen('localhost', 45678)
     end
     teardown do
-      @server.stop_listening
+      @server.stop_listen
     end
 
     should "be listening but not running" do
@@ -71,7 +66,7 @@ module DatTCP
     should "be able to call start after it" do
       assert_nothing_raised{ subject.start }
       assert subject.running?
-      subject.pause
+      subject.pause true
     end
 
     should "allow retrieving it's ip and port" do
@@ -123,7 +118,7 @@ module DatTCP
       @thread.join
     end
     teardown do
-      @server.stop_listening
+      @server.stop_listen
     end
 
     should "stop the thread" do
@@ -238,7 +233,7 @@ module DatTCP
     end
 
     should "allow building a DatTCP server from file descriptors" do
-      @server.pause
+      @server.pause true
       server_file_descriptor = @server.file_descriptor
       client_file_descriptors = @server.client_file_descriptors
 
@@ -250,9 +245,8 @@ module DatTCP
 
       value = @client_socket.read if IO.select([ @client_socket ], nil, nil, 2)
       assert_equal 'handled', value
-
-      @server.stop_listening
       new_server.stop true
+      @server.stop_listen
       thread.join
     end
 
