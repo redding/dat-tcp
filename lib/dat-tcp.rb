@@ -134,9 +134,10 @@ module DatTCP
 
     def work_loop(client_file_descriptors = nil)
       logger.info "Starting work loop..."
-      pool_args = [ @min_workers, @max_workers, @debug ]
-      @worker_pool = DatWorkerPool.new(*pool_args){ |socket| serve(socket) }
-      enqueue_file_descriptors(client_file_descriptors || [])
+      @worker_pool = DatWorkerPool.new(@min_workers, @max_workers) do |socket|
+        serve(socket)
+      end
+      add_client_sockets_from_fds client_file_descriptors
       while @signal.start?
         @worker_pool.add_work accept_connection
       end
@@ -155,19 +156,14 @@ module DatTCP
       logger.info "Stopped work loop"
     end
 
-    def enqueue_file_descriptors(file_descriptors)
-      file_descriptors.each do |file_descriptor|
+    def add_client_sockets_from_fds(file_descriptors)
+      (file_descriptors || []).each do |file_descriptor|
         @worker_pool.add_work TCPSocket.for_fd(file_descriptor)
       end
     end
 
-    # An accept-loop waiting for new connections. Will wait for a connection
-    # (up to `ready_timeout`) and accept it. `IO.select` with the timeout
-    # allows the server to be responsive to shutdowns.
     def accept_connection
-      while @signal.start?
-        return @tcp_server.accept if connection_ready?
-      end
+      @tcp_server.accept if connection_ready?
     end
 
     def connection_ready?

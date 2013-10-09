@@ -217,7 +217,7 @@ module DatTCP
       @thread.join(0.5) # give the server a chance to queue the connection
     end
     teardown do
-      @client_socket.close
+      @client_socket.close rescue false
       @server.stop true
       @thread.join
     end
