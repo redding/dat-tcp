@@ -10,7 +10,7 @@ class EchoServerTests < Assert::Context
 
   desc "defining a custom Echo Server"
   setup do
-    @server = EchoServer.new({ :ready_timeout => 0.1, :debug => !!ENV['DEBUG'] })
+    @server = EchoServer.new({ :debug => !!ENV['DEBUG'] })
   end
   teardown do
     @server.stop true

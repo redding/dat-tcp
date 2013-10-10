@@ -12,12 +12,17 @@ module DatTCP
       @min_workers = 1
       @max_workers = 1
       @shutdown_timeout = 1
+      @signal_reader, @signal_writer = IO.pipe
+      IO.stubs(:pipe).returns([ @signal_reader, @signal_writer ])
       options = {
         :min_workers => @min_workers,
         :max_workers => @max_workers,
         :shutdown_timeout => @shutdown_timeout
       }
       @server = DatTCP::Server.new(options){ |s| }
+    end
+    teardown do
+      IO.unstub(:pipe)
     end
     subject{ @server }
 
@@ -58,6 +63,7 @@ module DatTCP
         @server_fileno = server.fileno
       end
       @worker_pool_spy = DatWorkerPool::WorkerPoolSpy.new
+      @io_select_stub = IOSelectStub.new(@tcp_server_spy, @signal_reader)
 
       ::TCPServer.stubs(:new).tap do |s|
         s.with(@server_ip, @server_port)
@@ -71,11 +77,12 @@ module DatTCP
         s.with(@min_workers, @max_workers)
         s.returns(@worker_pool_spy)
       end
-      IOSelectStub.clients_unavailable(@tcp_server_spy, 1)
+      @io_select_stub.set_nothing_on_inputs
     end
     teardown do
+      @io_select_stub.set_data_on_signal_pipe
       @server.stop(true) rescue false
-      IOSelectStub.remove
+      @io_select_stub.remove
       DatWorkerPool.unstub(:new)
       ::TCPServer.unstub(:for_fd)
       ::TCPServer.unstub(:new)
@@ -166,7 +173,7 @@ module DatTCP
     setup do
       @client = FakeSocket.new
       @tcp_server_spy.connected_sockets << @client
-      IOSelectStub.clients_available(@tcp_server_spy, 1)
+      @io_select_stub.set_client_on_tcp_server
       @server.listen(@server_ip, @server_port)
       @thread = @server.start
     end
@@ -180,6 +187,7 @@ module DatTCP
     end
 
     should "client file descriptors should still be accessible after its paused" do
+      @io_select_stub.set_data_on_signal_pipe
       @server.pause true
       assert_includes @client.fileno, subject.client_file_descriptors
     end
@@ -212,6 +220,7 @@ module DatTCP
     setup do
       @server.listen(@server_ip, @server_port)
       @thread = @server.start
+      @io_select_stub.set_data_on_signal_pipe
       @server.stop true
     end
 
@@ -240,6 +249,7 @@ module DatTCP
     setup do
       @server.listen(@server_ip, @server_port)
       @thread = @server.start
+      @io_select_stub.set_data_on_signal_pipe
       @server.halt true
     end
 
@@ -267,6 +277,7 @@ module DatTCP
     setup do
       @server.listen(@server_ip, @server_port)
       @thread = @server.start
+      @io_select_stub.set_data_on_signal_pipe
       @server.pause true
     end
 
@@ -290,26 +301,38 @@ module DatTCP
 
   end
 
-  module IOSelectStub
+  class IOSelectStub
     # Stub IO.select to behave how it does for 2 scenarios: clients have
     # connected and are available OR clients haven't connected and aren't
     # available
 
-    def self.clients_available(socket, timeout)
+    def initialize(tcp_server, signal_pipe)
+      @tcp_server  = tcp_server
+      @signal_pipe = signal_pipe
+    end
+
+    def set_client_on_tcp_server
       IO.stubs(:select).tap do |s|
-        s.with([ socket ], nil, nil, timeout)
-        s.returns([ socket ])
+        s.with([ @tcp_server, @signal_pipe ])
+        s.returns([ [ @tcp_server ], [], [] ])
       end
     end
 
-    def self.clients_unavailable(socket, timeout)
+    def set_data_on_signal_pipe
       IO.stubs(:select).tap do |s|
-        s.with([ socket ], nil, nil, timeout)
-        s.returns(nil)
+        s.with([ @tcp_server, @signal_pipe ])
+        s.returns([ [ @signal_pipe ], [], [] ])
       end
     end
 
-    def self.remove
+    def set_nothing_on_inputs
+      IO.stubs(:select).tap do |s|
+        s.with([ @tcp_server, @signal_pipe ])
+        s.returns([ [], [], [] ])
+      end
+    end
+
+    def remove
       IO.unstub(:select)
     end
   end

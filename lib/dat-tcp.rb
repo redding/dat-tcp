@@ -18,8 +18,8 @@ module DatTCP
       @debug            = config[:debug]            || false
       @min_workers      = config[:min_workers]      || 2
       @max_workers      = config[:max_workers]      || 4
-      @ready_timeout    = config[:ready_timeout]    || 1
       @shutdown_timeout = config[:shutdown_timeout] || 15
+      @signal_reader, @signal_writer = IO.pipe
       @serve_proc = serve_proc || raise(ArgumentError, "no block given")
 
       @logger = DatTCP::Logger.new(@debug)
@@ -74,17 +74,17 @@ module DatTCP
     end
 
     def pause(wait = false)
-      @signal.set :pause
+      @signal_writer.write_nonblock('p')
       wait_for_shutdown if wait
     end
 
     def stop(wait = false)
-      @signal.set :stop
+      @signal_writer.write_nonblock('s')
       wait_for_shutdown if wait
     end
 
     def halt(wait = false)
-      @signal.set :halt
+      @signal_writer.write_nonblock('h')
       wait_for_shutdown if wait
     end
 
@@ -111,9 +111,7 @@ module DatTCP
         serve(socket)
       end
       add_client_sockets_from_fds client_file_descriptors
-      while @signal.start?
-        @worker_pool.add_work accept_connection
-      end
+      process_inputs while @signal.start?
       logger.info "Stopping work loop..."
       shutdown_worker_pool unless @signal.halt?
     rescue Exception => exception
@@ -135,12 +133,18 @@ module DatTCP
       end
     end
 
-    def accept_connection
-      @tcp_server.accept if connection_ready?
+    def process_inputs
+      ready_inputs, _, _ = IO.select([ @tcp_server, @signal_reader ])
+      accept_connection if ready_inputs.include?(@tcp_server)
+      process_signal    if ready_inputs.include?(@signal_reader)
     end
 
-    def connection_ready?
-      !!IO.select([ @tcp_server ], nil, nil, @ready_timeout)
+    def accept_connection
+      @worker_pool.add_work @tcp_server.accept
+    end
+
+    def process_signal
+      @signal.send @signal_reader.read_nonblock(1)
     end
 
     def shutdown_worker_pool
@@ -161,6 +165,10 @@ module DatTCP
         @value = value
         @mutex = Mutex.new
       end
+
+      def s; set :stop;  end
+      def h; set :halt;  end
+      def p; set :pause; end
 
       def set(value)
         @mutex.synchronize{ @value = value }
