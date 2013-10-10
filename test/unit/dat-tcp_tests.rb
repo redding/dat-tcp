@@ -24,7 +24,6 @@ module DatTCP
     should have_imeths :listen, :start
     should have_imeths :pause, :stop, :halt, :stop_listen
     should have_imeths :listening?, :running?
-    should have_imeths :on_listen, :on_start, :on_pause, :on_stop, :on_halt
     should have_imeths :ip, :port, :file_descriptor
     should have_imeths :client_file_descriptors
 
@@ -112,15 +111,15 @@ module DatTCP
       assert_equal true, option.value
     end
 
-    # TODO - planning on changing callbacks, not going to test it this way
-    # should "have called on_listen but no other hooks" do
-    #   assert_equal true, subject.on_listen_called
-    #   assert_instance_of TCPServer, subject.configure_tcp_server_called
-    #   assert_nil subject.on_run_called
-    #   assert_nil subject.on_pause_called
-    #   assert_nil subject.on_stop_called
-    #   assert_nil subject.on_halt_called
-    # end
+    should "allow setting socket options on the TCPServer by passing a block" do
+      subject.listen(@server_ip, @server_port) do |tcp_server|
+        tcp_server.setsockopt(::Socket::IPPROTO_TCP, ::Socket::TCP_NODELAY, true)
+      end
+      option = @tcp_server_spy.socket_options.detect do |opt|
+        opt.level == Socket::IPPROTO_TCP && opt.name == Socket::TCP_NODELAY
+      end
+      assert_equal true, option.value
+    end
 
   end
 
@@ -159,16 +158,6 @@ module DatTCP
       assert_equal true, subject.listening?
       assert_equal true, subject.running?
     end
-
-    # TODO - planning on changing callbacks, not going to test it this way
-    # should "have called on_listen and on_run but no other hooks" do
-    #   assert_equal true, subject.on_listen_called
-    #   assert_instance_of TCPServer, subject.configure_tcp_server_called
-    #   assert_equal true, subject.on_run_called
-    #   assert_nil subject.on_pause_called
-    #   assert_nil subject.on_stop_called
-    #   assert_nil subject.on_halt_called
-    # end
 
   end
 
@@ -244,16 +233,6 @@ module DatTCP
       assert_equal false, subject.running?
     end
 
-    # TODO - planning on changing callbacks, not going to test it this way
-    # should "have called on_listen, on_run and on_pause but no other hooks" do
-    #   assert_equal true, subject.on_listen_called
-    #   assert_instance_of TCPServer, subject.configure_tcp_server_called
-    #   assert_equal true, subject.on_run_called
-    #   assert_nil subject.on_pause_called
-    #   assert_equal true, subject.on_stop_called
-    #   assert_nil subject.on_halt_called
-    # end
-
   end
 
   class HaltTests < ListenAndRunningTests
@@ -280,16 +259,6 @@ module DatTCP
       assert_equal false, subject.listening?
       assert_equal false, subject.running?
     end
-
-    # TODO - planning on changing callbacks, not going to test it this way
-    # should "have called on_listen, on_run and on_pause but no other hooks" do
-    #   assert_equal true, subject.on_listen_called
-    #   assert_instance_of TCPServer, subject.configure_tcp_server_called
-    #   assert_equal true, subject.on_run_called
-    #   assert_nil subject.on_pause_called
-    #   assert_nil subject.on_stop_called
-    #   assert_equal true, subject.on_halt_called
-    # end
 
   end
 
@@ -318,16 +287,6 @@ module DatTCP
       assert_equal true, subject.listening?
       assert_equal false, subject.running?
     end
-
-    # TODO - planning on changing callbacks, not going to test it this way
-    # should "have called on_listen, on_run and on_pause but no other hooks" do
-    #   assert_equal true, subject.on_listen_called
-    #   assert_instance_of TCPServer, subject.configure_tcp_server_called
-    #   assert_equal true, subject.on_run_called
-    #   assert_equal true, subject.on_pause_called
-    #   assert_nil subject.on_stop_called
-    #   assert_nil subject.on_halt_called
-    # end
 
   end
 
