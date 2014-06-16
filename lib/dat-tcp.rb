@@ -114,7 +114,7 @@ module DatTCP
       process_inputs while @signal.start?
       logger.info "Stopping work loop..."
       shutdown_worker_pool unless @signal.halt?
-    rescue Exception => exception
+    rescue StandardError => exception
       logger.error "Exception occurred, stopping server!"
       logger.error "#{exception.class}: #{exception.message}"
       logger.error exception.backtrace.join("\n")

@@ -3,7 +3,7 @@ require 'dat-tcp/logger'
 
 module DatTCP::Logger
 
-  class BaseTests < Assert::Context
+  class UnitTests < Assert::Context
     desc "DatTCP::Logger"
     subject{ DatTCP::Logger }
 
@@ -11,7 +11,7 @@ module DatTCP::Logger
 
   end
 
-  class DebugTests < BaseTests
+  class DebugTests < UnitTests
     desc "debug"
     setup do
       @logger = DatTCP::Logger::Debug.new
@@ -21,9 +21,10 @@ module DatTCP::Logger
     should "be an instance of Logger" do
       assert_instance_of Logger, subject
     end
+
   end
 
-  class NullTests < BaseTests
+  class NullTests < UnitTests
     desc "null"
     setup do
       @logger = DatTCP::Logger::Null.new
@@ -35,6 +36,7 @@ module DatTCP::Logger
     should "be an instance of DatTCP::Logger::Null" do
       assert_instance_of DatTCP::Logger::Null, subject
     end
+
   end
 
 end
