@@ -5,49 +5,33 @@ DatTCP is a generic threaded server implementation using Ruby's `TCPServer`. It 
 ## Usage
 
 ```ruby
-class MyServer
-  include DatTCP::Server
-
-  def serve!(socket)
-    # read from socket
-    # write to socket
-  end
-
-end
-```
-
-Define your own server by mixing in `DatTCP::Server`.  Implementing a `serve` method that accepts a socket instance. DatTCP will call the `serve` method for each new connection it receives.
-
-A separate thread is used for every connection. This means that the `serve` method should be threadsafe, as multiple threads may call it simultaneously.
-
-### Starting
-
-```ruby
-server = MyServer.new({ :min_workers => 1 })
-server.listen('localhost', 12000)
-server.run
-```
-
-Create an instance of your server and optionally override any default settings. Call `listen` to build a `TCPServer` and bind to an address and port. Finally, call `run` to begin accepting and queueing connections to serve.
-
-The `run` method returns the thread that is accepting connections.  Typically, you will want to `join` this thread so that it can perpetually accept connections:
-
-```ruby
-server.run.join
-```
-
-The server will then continue processing connections until it is signalled to stop or its process is killed.
-
-### Handling Connections
-
-```ruby
-def serve!(socket)
+server = DatTCP::Server.new do |socket|
   message = socket.read
   socket.write(message)
 end
 ```
 
-To handle a client connection, define a `serve` method that accepts a `TCPSocket` instance that can be read from and written to.
+Build your own server using `DatTCP::Server` and passing it a block for handling socket connections. DatTCP will call the block for each new connection it receives.
+
+A separate thread is used for every connection. This means that the block passed to the server should be threadsafe, as multiple threads may call it simultaneously.
+
+### Starting
+
+```ruby
+server = DatTCP::Server.new({ :min_workers => 1 }){ |s| }
+server.listen('localhost', 12000)
+server.start
+```
+
+Create an instance of a server and optionally override any default settings. Call `listen` to build a `TCPServer` and bind to an address and port. Finally, call `start` to begin accepting and queueing connections to serve.
+
+The `start` method returns the thread that is accepting connections.  Typically, you will want to `join` this thread so that it can perpetually accept connections:
+
+```ruby
+server.start.join
+```
+
+The server will then continue processing connections until it is signalled to stop or its process is killed.
 
 ### Stopping
 
@@ -61,7 +45,7 @@ If you plan to join the server thread, it's useful to setup signal traps so you 
 
 ```ruby
 Signal.trap('TERM'){ server.stop }
-server.run.join
+server.start.join
 ```
 
 ```sh
@@ -80,28 +64,20 @@ $ kill -TERM 12345
                        connections.
 * `max_workers`      - The maximum number of threads to spin up to handle
                        connections.
-* `ready_timeout`    - The number of seconds the server will wait for a new
-                       connection. This controls the "responsiveness" of the
-                       server; how fast it will perform checks, like detecting
-                       if it has been signaled to stop.
 * `shutdown_timeout` - The number of seconds the server will wait for workers
                        to finish serving a connection. If they don't finish in
                        this time, the server will continue shutting down.
 * `debug`            - Output debug messages or not.
 
-### Hooks
+### Setting TCP server socket options
 
-A DatTCP server also has a number of hooks for adding custom behavior when different events occur:
+A DatTCP server allows configuring the TCP server socket it creates. This is done by passing a block to the `listen` method:
 
-* `configure_tcp_server` - Called after an instance of `TCPServer` is created,
-                           but before it starts listening. The instance will
-                           be passed to this method, so this can be used to
-                           set socket options as needed.
-* `on_listen`            - Called when `listen` is called.
-* `on_run`               - Called when `run` is called.
-* `on_pause`             - Called when `pause` is called.
-* `on_stop`              - Called when `stop` is called.
-* `on_halt`              - Called when `halt` is called.
+```ruby
+server.listen('localhost', 12000) do |server_socket|
+  server_socket.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true)
+end
+```
 
 ## Benchmarking
 
