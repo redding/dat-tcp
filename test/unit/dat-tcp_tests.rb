@@ -13,16 +13,13 @@ module DatTCP
       @max_workers = 1
       @shutdown_timeout = 1
       @signal_reader, @signal_writer = IO.pipe
-      IO.stubs(:pipe).returns([ @signal_reader, @signal_writer ])
+      Assert.stub(IO, :pipe){ [@signal_reader, @signal_writer] }
       options = {
         :min_workers => @min_workers,
         :max_workers => @max_workers,
         :shutdown_timeout => @shutdown_timeout
       }
       @server = DatTCP::Server.new(options){ |s| }
-    end
-    teardown do
-      IO.unstub(:pipe)
     end
     subject{ @server }
 
@@ -65,27 +62,16 @@ module DatTCP
       @worker_pool_spy = DatWorkerPool::WorkerPoolSpy.new
       @io_select_stub = IOSelectStub.new(@tcp_server_spy, @signal_reader)
 
-      ::TCPServer.stubs(:new).tap do |s|
-        s.with(@server_ip, @server_port)
-        s.returns(@tcp_server_spy)
-      end
-      ::TCPServer.stubs(:for_fd).tap do |s|
-        s.with(@server_fileno)
-        s.returns(@tcp_server_spy)
-      end
-      DatWorkerPool.stubs(:new).tap do |s|
-        s.with(@min_workers, @max_workers)
-        s.returns(@worker_pool_spy)
+      Assert.stub(::TCPServer, :new).with(@server_ip, @server_port){ @tcp_server_spy }
+      Assert.stub(::TCPServer, :for_fd).with(@server_fileno){ @tcp_server_spy }
+      Assert.stub(::DatWorkerPool, :new).with(@min_workers, @max_workers) do
+        @worker_pool_spy
       end
       @io_select_stub.set_nothing_on_inputs
     end
     teardown do
       @io_select_stub.set_data_on_signal_pipe
       @server.stop(true) rescue false
-      @io_select_stub.remove
-      DatWorkerPool.unstub(:new)
-      ::TCPServer.unstub(:for_fd)
-      ::TCPServer.unstub(:new)
     end
   end
 
@@ -199,14 +185,11 @@ module DatTCP
     setup do
       @clients = [*1..2].map do |n|
         client = FakeSocket.new
-        TCPSocket.stubs(:for_fd).with(client.fileno).returns(client)
+        Assert.stub(TCPSocket, :for_fd).with(client.fileno){ client }
         client
       end
       @server.listen(@server_ip, @server_port)
       @thread = @server.start(@clients.map(&:fileno))
-    end
-    teardown do
-      TCPSocket.unstub(:for_fd)
     end
 
     should "add the clients to the worker pool" do
@@ -312,28 +295,21 @@ module DatTCP
     end
 
     def set_client_on_tcp_server
-      IO.stubs(:select).tap do |s|
-        s.with([ @tcp_server, @signal_pipe ])
-        s.returns([ [ @tcp_server ], [], [] ])
+      Assert.stub(IO, :select).with([@tcp_server, @signal_pipe]) do
+        [ [ @tcp_server ], [], [] ]
       end
     end
 
     def set_data_on_signal_pipe
-      IO.stubs(:select).tap do |s|
-        s.with([ @tcp_server, @signal_pipe ])
-        s.returns([ [ @signal_pipe ], [], [] ])
+      Assert.stub(IO, :select).with([@tcp_server, @signal_pipe]) do
+        [ [ @signal_pipe ], [], [] ]
       end
     end
 
     def set_nothing_on_inputs
-      IO.stubs(:select).tap do |s|
-        s.with([ @tcp_server, @signal_pipe ])
-        s.returns([ [], [], [] ])
+      Assert.stub(IO, :select).with([@tcp_server, @signal_pipe]) do
+        [ [], [], [] ]
       end
-    end
-
-    def remove
-      IO.unstub(:select)
     end
   end
 
