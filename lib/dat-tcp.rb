@@ -111,6 +111,7 @@ module DatTCP
         serve(socket)
       end
       add_client_sockets_from_fds client_file_descriptors
+      @worker_pool.start
       process_inputs while @signal.start?
       logger.info "Stopping work loop..."
       shutdown_worker_pool unless @signal.halt?
