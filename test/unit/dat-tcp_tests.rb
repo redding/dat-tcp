@@ -15,8 +15,8 @@ module DatTCP
       @signal_reader, @signal_writer = IO.pipe
       Assert.stub(IO, :pipe){ [@signal_reader, @signal_writer] }
       options = {
-        :min_workers => @min_workers,
-        :max_workers => @max_workers,
+        :min_workers      => @min_workers,
+        :max_workers      => @max_workers,
         :shutdown_timeout => @shutdown_timeout
       }
       @server = DatTCP::Server.new(options){ |s| }
@@ -59,13 +59,12 @@ module DatTCP
         @server_port   = server.port
         @server_fileno = server.fileno
       end
-      @worker_pool_spy = DatWorkerPool::WorkerPoolSpy.new
       @io_select_stub = IOSelectStub.new(@tcp_server_spy, @signal_reader)
 
       Assert.stub(::TCPServer, :new).with(@server_ip, @server_port){ @tcp_server_spy }
       Assert.stub(::TCPServer, :for_fd).with(@server_fileno){ @tcp_server_spy }
-      Assert.stub(::DatWorkerPool, :new).with(@min_workers, @max_workers) do
-        @worker_pool_spy
+      Assert.stub(::DatWorkerPool, :new) do |*args|
+        @worker_pool_spy = DatWorkerPool::WorkerPoolSpy.new(*args)
       end
       @io_select_stub.set_nothing_on_inputs
     end
@@ -73,6 +72,7 @@ module DatTCP
       @io_select_stub.set_data_on_signal_pipe
       @server.stop(true) rescue false
     end
+
   end
 
   class ListenTests < ListenAndRunningTests
@@ -114,6 +114,10 @@ module DatTCP
       assert_equal true, option.value
     end
 
+    should "not have built a dat worker pool" do
+      assert_nil @worker_pool_spy
+    end
+
   end
 
   class ListenWithFileDescriptorTests < ListenAndRunningTests
@@ -145,6 +149,13 @@ module DatTCP
     should "return a thread for running the server" do
       assert_instance_of Thread, @thread
       assert @thread.alive?
+    end
+
+    should "build and start its worker pool" do
+      assert_not_nil @worker_pool_spy
+      assert_equal @min_workers, @worker_pool_spy.min_workers
+      assert_equal @max_workers, @worker_pool_spy.max_workers
+      assert_true @worker_pool_spy.start_called
     end
 
     should "be listening and running?" do
