@@ -31,7 +31,7 @@ module DatTCP
     end
 
     def ip
-      @tcp_server.addr[2] if self.listening?
+      @tcp_server.addr[3] if self.listening?
     end
 
     def port

@@ -5,14 +5,14 @@ class TCPServerSpy
   attr_accessor :connected_sockets
 
   def initialize
-    @ip     = 'localhost'
+    @ip     = '127.0.0.1'
     @port   = 45678
     @fileno = 12345
     close
   end
 
   def addr
-    [ 'family', @port, @ip, 'numeric-address' ]
+    ['family', @port, 'hostname', @ip]
   end
 
   def setsockopt(level, name, value)
