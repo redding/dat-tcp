@@ -23,17 +23,28 @@ module DatTCP
     end
     subject{ @server }
 
+    should have_readers :worker_start_procs, :worker_shutdown_procs
+    should have_readers :worker_sleep_procs, :worker_wakeup_procs
     should have_imeths :listen, :start
     should have_imeths :pause, :stop, :halt, :stop_listen
     should have_imeths :listening?, :running?
     should have_imeths :ip, :port, :file_descriptor
     should have_imeths :client_file_descriptors
+    should have_imeths :on_worker_start, :on_worker_shutdown
+    should have_imeths :on_worker_sleep, :on_worker_wakeup
 
     should "not know it's ip, port, file descriptor or client file descriptors" do
       assert_nil subject.ip
       assert_nil subject.port
       assert_nil subject.file_descriptor
       assert_equal [], subject.client_file_descriptors
+    end
+
+    should "not have any worker procs by default" do
+      assert_equal [], subject.worker_start_procs
+      assert_equal [], subject.worker_shutdown_procs
+      assert_equal [], subject.worker_sleep_procs
+      assert_equal [], subject.worker_wakeup_procs
     end
 
     should "not be connected or running by default" do
@@ -48,6 +59,22 @@ module DatTCP
 
     should "raise an exception when start is called without calling listen" do
       assert_raises(DatTCP::NotListeningError){ subject.start }
+    end
+
+    should "allow reading/writing its worker procs" do
+      proc = Proc.new{}
+
+      subject.on_worker_start(&proc)
+      assert_equal [proc], subject.worker_start_procs
+
+      subject.on_worker_shutdown(&proc)
+      assert_equal [proc], subject.worker_shutdown_procs
+
+      subject.on_worker_sleep(&proc)
+      assert_equal [proc], subject.worker_sleep_procs
+
+      subject.on_worker_wakeup(&proc)
+      assert_equal [proc], subject.worker_wakeup_procs
     end
 
   end
@@ -142,6 +169,13 @@ module DatTCP
   class StartTests < ListenAndRunningTests
     desc "when start is called"
     setup do
+      Factory.integer(3).times.each do
+        @server.on_worker_start(&proc{ Factory.string })
+        @server.on_worker_shutdown(&proc{ Factory.string })
+        @server.on_worker_sleep(&proc{ Factory.string })
+        @server.on_worker_wakeup(&proc{ Factory.string })
+      end
+
       @server.listen(@server_ip, @server_port)
       @thread = @server.start
     end
@@ -155,6 +189,14 @@ module DatTCP
       assert_not_nil @worker_pool_spy
       assert_equal @min_workers, @worker_pool_spy.min_workers
       assert_equal @max_workers, @worker_pool_spy.max_workers
+      exp = subject.worker_start_procs
+      assert_equal exp, @worker_pool_spy.on_worker_start_callbacks
+      exp = subject.worker_shutdown_procs
+      assert_equal exp, @worker_pool_spy.on_worker_shutdown_callbacks
+      exp = subject.worker_sleep_procs
+      assert_equal exp, @worker_pool_spy.on_worker_sleep_callbacks
+      exp = subject.worker_wakeup_procs
+      assert_equal exp, @worker_pool_spy.on_worker_wakeup_callbacks
       assert_true @worker_pool_spy.start_called
     end
 

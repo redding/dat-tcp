@@ -9,6 +9,8 @@ module DatTCP
 
   class Server
 
+    attr_reader :worker_start_procs, :worker_shutdown_procs
+    attr_reader :worker_sleep_procs, :worker_wakeup_procs
     attr_reader :logger
     private :logger
 
@@ -21,6 +23,11 @@ module DatTCP
       @shutdown_timeout = config[:shutdown_timeout] || 15
       @signal_reader, @signal_writer = IO.pipe
       @serve_proc = serve_proc || raise(ArgumentError, "no block given")
+
+      @worker_start_procs    = []
+      @worker_shutdown_procs = []
+      @worker_sleep_procs    = []
+      @worker_wakeup_procs   = []
 
       @logger = DatTCP::Logger.new(@debug)
 
@@ -88,6 +95,11 @@ module DatTCP
       wait_for_shutdown if wait
     end
 
+    def on_worker_start(&block);    @worker_start_procs << block;    end
+    def on_worker_shutdown(&block); @worker_shutdown_procs << block; end
+    def on_worker_sleep(&block);    @worker_sleep_procs << block;    end
+    def on_worker_wakeup(&block);   @worker_wakeup_procs << block;   end
+
     def inspect
       reference = '0x0%x' % (self.object_id << 1)
       "#<#{self.class}:#{reference}".tap do |s|
@@ -107,9 +119,7 @@ module DatTCP
 
     def work_loop(client_file_descriptors = nil)
       logger.info "Starting work loop..."
-      @worker_pool = DatWorkerPool.new(@min_workers, @max_workers) do |socket|
-        serve(socket)
-      end
+      @worker_pool = build_worker_pool
       add_client_sockets_from_fds client_file_descriptors
       @worker_pool.start
       process_inputs while @signal.start?
@@ -126,6 +136,29 @@ module DatTCP
       end
       clear_thread
       logger.info "Stopped work loop"
+    end
+
+    def build_worker_pool
+      wp = DatWorkerPool.new(
+        @min_workers,
+        @max_workers
+      ){ |socket| serve(socket) }
+
+      # add any configured callbacks
+      self.worker_start_procs.each do |cb|
+        wp.on_worker_start(&cb)
+      end
+      self.worker_shutdown_procs.each do |cb|
+        wp.on_worker_shutdown(&cb)
+      end
+      self.worker_sleep_procs.each do |cb|
+        wp.on_worker_sleep(&cb)
+      end
+      self.worker_wakeup_procs.each do |cb|
+        wp.on_worker_wakeup(&cb)
+      end
+
+      wp
     end
 
     def add_client_sockets_from_fds(file_descriptors)

@@ -13,6 +13,8 @@ class DatTCP::ServerSpy
     should have_readers :ip, :port, :file_descriptor
     should have_readers :client_file_descriptors
     should have_readers :logger
+    should have_readers :worker_start_procs, :worker_shutdown_procs
+    should have_readers :worker_sleep_procs, :worker_wakeup_procs
     should have_readers :waiting_for_pause
     should have_readers :waiting_for_stop, :waiting_for_halt
     should have_readers :listen_called, :start_called
@@ -22,6 +24,8 @@ class DatTCP::ServerSpy
     should have_imeths :listening?, :running?
     should have_imeths :listen, :stop_listen
     should have_imeths :start, :stop, :halt
+    should have_imeths :on_worker_start, :on_worker_shutdown
+    should have_imeths :on_worker_sleep, :on_worker_wakeup
 
     should "default its attributes" do
       assert_nil subject.ip
@@ -29,6 +33,11 @@ class DatTCP::ServerSpy
       assert_nil subject.file_descriptor
       assert_equal [], subject.client_file_descriptors
       assert_instance_of DatTCP::Logger::Null, subject.logger
+
+      assert_equal [], subject.worker_start_procs
+      assert_equal [], subject.worker_shutdown_procs
+      assert_equal [], subject.worker_sleep_procs
+      assert_equal [], subject.worker_wakeup_procs
 
       assert_nil subject.waiting_for_pause
       assert_nil subject.waiting_for_stop
@@ -129,6 +138,22 @@ class DatTCP::ServerSpy
       subject.halt(wait)
       assert_equal wait, subject.waiting_for_halt
       assert_true subject.halt_called
+    end
+
+    should "allow reading/writing its worker procs" do
+      proc = Proc.new{}
+
+      subject.on_worker_start(&proc)
+      assert_equal [proc], subject.worker_start_procs
+
+      subject.on_worker_shutdown(&proc)
+      assert_equal [proc], subject.worker_shutdown_procs
+
+      subject.on_worker_sleep(&proc)
+      assert_equal [proc], subject.worker_sleep_procs
+
+      subject.on_worker_wakeup(&proc)
+      assert_equal [proc], subject.worker_wakeup_procs
     end
 
   end

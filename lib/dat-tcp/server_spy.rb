@@ -7,6 +7,8 @@ module DatTCP
     attr_reader :ip, :port, :file_descriptor
     attr_reader :client_file_descriptors
     attr_reader :logger
+    attr_reader :worker_start_procs, :worker_shutdown_procs
+    attr_reader :worker_sleep_procs, :worker_wakeup_procs
     attr_reader :waiting_for_pause, :waiting_for_stop, :waiting_for_halt
     attr_accessor :listen_called, :start_called
     attr_accessor :stop_listen_called, :pause_called
@@ -21,9 +23,14 @@ module DatTCP
       @client_file_descriptors = []
       @logger = DatTCP::Logger::Null.new
 
+      @worker_start_procs    = []
+      @worker_shutdown_procs = []
+      @worker_sleep_procs    = []
+      @worker_wakeup_procs   = []
+
       @waiting_for_pause = nil
       @waiting_for_stop = nil
-      @waiting_for_hale = nil
+      @waiting_for_halt = nil
 
       @listen_called = false
       @stop_listen_called = false
@@ -76,6 +83,11 @@ module DatTCP
       @waiting_for_halt = wait
       @halt_called = true
     end
+
+    def on_worker_start(&block);    @worker_start_procs << block;    end
+    def on_worker_shutdown(&block); @worker_shutdown_procs << block; end
+    def on_worker_sleep(&block);    @worker_sleep_procs << block;    end
+    def on_worker_wakeup(&block);   @worker_wakeup_procs << block;   end
 
   end
 
