@@ -3,7 +3,7 @@ require 'benchmark'
 module Bench
 
   class Runner
-    HOST_AND_PORT = [ '0.0.0.0', 12000 ]
+    HOST_AND_PORT = ['0.0.0.0', 12000]
 
     TIME_MODIFIER = 10 ** 4 # 4 decimal places
 
@@ -31,7 +31,7 @@ module Bench
 
     def display_time(time)
       integer, fractional = time.to_s.split('.')
-      [ integer, fractional.ljust(4, '0') ].join('.')
+      [integer, fractional.ljust(4, '0')].join('.')
     end
 
   end
