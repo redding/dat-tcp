@@ -15,6 +15,14 @@ class DatTCP::Server
     end
     subject{ @server_class }
 
+    should "know its default backlog size" do
+      assert_equal 1024, DEFAULT_BACKLOG_SIZE
+    end
+
+    should "know its default shutdown timeout" do
+      assert_equal 15, DEFAULT_SHUTDOWN_TIMEOUT
+    end
+
     should "know its default number of workers" do
       assert_equal 2, DEFAULT_NUM_WORKERS
     end
@@ -134,7 +142,7 @@ class DatTCP::Server
 
     should "have it's TCPServer listening" do
       assert @tcp_server_spy.listening
-      assert_equal 1024, @tcp_server_spy.backlog_size
+      assert_equal DEFAULT_BACKLOG_SIZE, @tcp_server_spy.backlog_size
     end
 
     should "set the TCPServer's Socket::SO_REUSEADDR option to true" do
