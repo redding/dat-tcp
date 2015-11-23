@@ -21,5 +21,6 @@ Gem::Specification.new do |gem|
 
   gem.add_dependency("dat-worker-pool", ["~> 0.6"])
 
-  gem.add_development_dependency('assert', ['~> 2.15'])
+  gem.add_development_dependency("assert", ["~> 2.15"])
+  gem.add_development_dependency("scmd",   ["~> 3.0"])
 end
