@@ -12,7 +12,6 @@ class DatTCP::ServerSpy
 
     should have_readers :ip, :port, :file_descriptor
     should have_readers :client_file_descriptors
-    should have_readers :logger
     should have_readers :worker_start_procs, :worker_shutdown_procs
     should have_readers :worker_sleep_procs, :worker_wakeup_procs
     should have_readers :waiting_for_pause
@@ -32,7 +31,6 @@ class DatTCP::ServerSpy
       assert_nil subject.port
       assert_nil subject.file_descriptor
       assert_equal [], subject.client_file_descriptors
-      assert_instance_of DatTCP::Logger::Null, subject.logger
 
       assert_equal [], subject.worker_start_procs
       assert_equal [], subject.worker_shutdown_procs

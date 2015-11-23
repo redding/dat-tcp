@@ -26,7 +26,7 @@ class BenchServerRunner
 
   def run
     bench_server = DatTCP::Server.new(Worker, {
-      :debug         => !!ENV['DEBUG'],
+      :logger        => LOGGER,
       :worker_params => {
         :processing_times => @processing_times
       }

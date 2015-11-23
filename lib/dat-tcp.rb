@@ -3,7 +3,6 @@ require 'socket'
 require 'thread'
 
 require 'dat-tcp/version'
-require 'dat-tcp/logger'
 require 'dat-tcp/worker'
 
 module DatTCP
@@ -12,9 +11,6 @@ module DatTCP
 
     DEFAULT_NUM_WORKERS = 2
 
-    attr_reader :logger
-    private :logger
-
     def initialize(worker_class, options = nil)
       if !worker_class.kind_of?(Class) || !worker_class.include?(DatTCP::Worker)
         raise ArgumentError, "worker class must include `#{DatTCP::Worker}`"
@@ -22,15 +18,19 @@ module DatTCP
 
       options ||= {}
       @backlog_size     = options[:backlog_size]     || 1024
-      @debug            = options[:debug]            || false
       @shutdown_timeout = options[:shutdown_timeout] || 15
 
       @signal_reader, @signal_writer = IO.pipe
 
-      @logger = DatTCP::Logger.new(@debug)
+      @logger_proxy = if options[:logger]
+        LoggerProxy.new(options[:logger])
+      else
+        NullLoggerProxy.new
+      end
 
       @worker_pool = DatWorkerPool.new(worker_class, {
         :num_workers   => (options[:num_workers] || DEFAULT_NUM_WORKERS),
+        :logger        => options[:logger],
         :worker_params => options[:worker_params]
       })
 
@@ -111,15 +111,14 @@ module DatTCP
       setup(passed_client_fds)
       accept_client_connections while @signal.start?
     rescue StandardError => exception
-      logger.error "Exception occurred, stopping server!"
-      logger.error "#{exception.class}: #{exception.message}"
-      logger.error exception.backtrace.join("\n")
+      log{ "An error occurred while running the server, exiting" }
+      log{ "#{exception.class}: #{exception.message}" }
+      (exception.backtrace || []).each{ |l| log{ l } }
     ensure
       teardown
     end
 
     def setup(passed_client_fds)
-      logger.info "Starting work loop..."
       @worker_pool.start
       (passed_client_fds || []).each do |fd|
         @worker_pool.push TCPSocket.for_fd(fd)
@@ -139,22 +138,23 @@ module DatTCP
     end
 
     def teardown
-      logger.info "Stopping work loop..."
       unless @signal.pause?
-        logger.info "Closing TCP server connection"
+        log{ "Stop listening for connections, closing TCP socket" }
         self.stop_listen
       end
-      unless @signal.halt?
-        logger.info "Shutting down worker pool"
-        @worker_pool.shutdown(@shutdown_timeout)
-      end
-      logger.info "Stopped work loop"
+
+      timeout = @signal.halt? ? 0 : @shutdown_timeout
+      @worker_pool.shutdown(timeout)
     ensure
       @thread = nil
     end
 
     def wait_for_shutdown
       @thread.join if @thread
+    end
+
+    def log(&message_block)
+      @logger_proxy.log(&message_block)
     end
 
     class Signal
@@ -224,6 +224,16 @@ module DatTCP
         tcp_server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true)
         tcp_server
       end
+    end
+
+    class LoggerProxy < Struct.new(:logger)
+      def log(&message_block)
+        self.logger.debug("[DTCP] #{message_block.call}")
+      end
+    end
+
+    class NullLoggerProxy
+      def log(&block); end
     end
 
   end

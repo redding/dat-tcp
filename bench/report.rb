@@ -96,7 +96,7 @@ class BenchClientRunner
       begin
         client = Client.new(*IP_AND_PORT)
         response = client.call(ENV['ECHO_MESSAGE'] || 'test')
-        if ENV['DEBUG']
+        if ENV['SHOW_RESPONSE']
           output "Got response:"
           output "  #{response.inspect}"
         end

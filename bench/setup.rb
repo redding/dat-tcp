@@ -8,6 +8,12 @@ NUM_WORKERS  = 4
 
 TIME_MODIFIER = 10 ** 4 # 4 decimal places
 
+LOGGER = if ENV['DEBUG']
+  Logger.new(ROOT_PATH.join("log/bench.log")).tap do |l|
+    l.datetime_format = '' # don't show datetime in the logs
+  end
+end
+
 module BenchRunner
 
   private
