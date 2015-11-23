@@ -1,41 +1,62 @@
 require 'assert'
 require 'dat-tcp/server_spy'
 
+require 'dat-tcp'
+require 'dat-tcp/worker'
+
 class DatTCP::ServerSpy
 
   class UnitTests < Assert::Context
     desc "DatTCP::ServerSpy"
     setup do
-      @server_spy = DatTCP::ServerSpy.new
+      @spy_class = DatTCP::ServerSpy
+    end
+    subject{ @spy_class }
+
+  end
+
+  class InitTests < UnitTests
+    desc "when init"
+    setup do
+      @worker_class = Class.new{ include DatTCP::Worker }
+      @options = {
+        :backlog_size     => Factory.integer,
+        :shutdown_timeout => Factory.integer,
+        :num_workers      => Factory.integer,
+        :logger           => TEST_LOGGER,
+        :worker_params    => { Factory.string => Factory.string }
+      }
+
+      @server_spy = @spy_class.new(@worker_class, @options)
     end
     subject{ @server_spy }
 
+    should have_readers :worker_class
+    should have_readers :options, :backlog_size, :shutdown_timeout
+    should have_readers :num_workers, :logger, :worker_params
     should have_readers :ip, :port, :file_descriptor
     should have_readers :client_file_descriptors
-    should have_readers :worker_start_procs, :worker_shutdown_procs
-    should have_readers :worker_sleep_procs, :worker_wakeup_procs
-    should have_readers :waiting_for_pause
-    should have_readers :waiting_for_stop, :waiting_for_halt
-    should have_readers :listen_called, :start_called
-    should have_readers :stop_listen_called, :pause_called
-    should have_readers :stop_called, :halt_called
-    should have_accessors :serve_proc
+    should have_readers :waiting_for_pause, :waiting_for_stop, :waiting_for_halt
+    should have_accessors :listen_called, :start_called
+    should have_accessors :stop_listen_called, :pause_called
+    should have_accessors :stop_called, :halt_called
     should have_imeths :listening?, :running?
     should have_imeths :listen, :stop_listen
     should have_imeths :start, :stop, :halt
-    should have_imeths :on_worker_start, :on_worker_shutdown
-    should have_imeths :on_worker_sleep, :on_worker_wakeup
 
-    should "default its attributes" do
+    should "know its attributes" do
+      assert_equal @worker_class,               subject.worker_class
+      assert_equal @options,                    subject.options
+      assert_equal @options[:backlog_size],     subject.backlog_size
+      assert_equal @options[:shutdown_timeout], subject.shutdown_timeout
+      assert_equal @options[:num_workers],      subject.num_workers
+      assert_equal @options[:logger],           subject.logger
+      assert_equal @options[:worker_params],    subject.worker_params
+
       assert_nil subject.ip
       assert_nil subject.port
       assert_nil subject.file_descriptor
       assert_equal [], subject.client_file_descriptors
-
-      assert_equal [], subject.worker_start_procs
-      assert_equal [], subject.worker_shutdown_procs
-      assert_equal [], subject.worker_sleep_procs
-      assert_equal [], subject.worker_wakeup_procs
 
       assert_nil subject.waiting_for_pause
       assert_nil subject.waiting_for_stop
@@ -47,8 +68,15 @@ class DatTCP::ServerSpy
       assert_false subject.pause_called
       assert_false subject.stop_called
       assert_false subject.halt_called
+    end
 
-      assert_instance_of Proc, subject.serve_proc
+    should "default its attributes" do
+      server_ns = DatTCP::Server
+
+      server_spy = @spy_class.new(@worker_class)
+      assert_equal server_ns::DEFAULT_BACKLOG_SIZE,     server_spy.backlog_size
+      assert_equal server_ns::DEFAULT_SHUTDOWN_TIMEOUT, server_spy.shutdown_timeout
+      assert_equal server_ns::DEFAULT_NUM_WORKERS,      server_spy.num_workers
     end
 
     should "know if its listening or not" do
@@ -77,12 +105,12 @@ class DatTCP::ServerSpy
     end
 
     should "set its ip, port and listen flag using `listen`" do
-      ip = Factory.string
+      ip   = Factory.string
       port = Factory.integer
 
       assert_false subject.listen_called
       subject.listen(ip, port)
-      assert_equal ip, subject.ip
+      assert_equal ip,   subject.ip
       assert_equal port, subject.port
       assert_true subject.listen_called
     end
@@ -103,7 +131,7 @@ class DatTCP::ServerSpy
     end
 
     should "set its client file descriptors and its start flag using `start`" do
-      client_fds = [ Factory.integer, Factory.integer ]
+      client_fds = [Factory.integer, Factory.integer]
 
       assert_false subject.start_called
       subject.start(client_fds)
@@ -136,22 +164,6 @@ class DatTCP::ServerSpy
       subject.halt(wait)
       assert_equal wait, subject.waiting_for_halt
       assert_true subject.halt_called
-    end
-
-    should "allow reading/writing its worker procs" do
-      proc = Proc.new{}
-
-      subject.on_worker_start(&proc)
-      assert_equal [proc], subject.worker_start_procs
-
-      subject.on_worker_shutdown(&proc)
-      assert_equal [proc], subject.worker_shutdown_procs
-
-      subject.on_worker_sleep(&proc)
-      assert_equal [proc], subject.worker_sleep_procs
-
-      subject.on_worker_wakeup(&proc)
-      assert_equal [proc], subject.worker_wakeup_procs
     end
 
   end
