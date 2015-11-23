@@ -2,34 +2,20 @@ $LOAD_PATH.push File.expand_path('../..', __FILE__)
 
 require 'benchmark'
 require 'dat-tcp'
+require 'dat-worker-pool/locked_object'
 require 'bench/runner'
 
 module Bench
 
-  class Server
+  class Worker
+    include DatTCP::Worker
 
-    attr_reader :processing_times
-
-    def initialize(*args)
-      @server = DatTCP::Server.new(*args){ |s| serve(s) }
-      @times_mutex = Mutex.new
-      @processing_times = []
-    end
-
-    def start(*args)
-      @server.listen(*args)
-      @server.start.join
-    end
-
-    def stop
-      @server.stop
-    end
-
-    def serve(socket)
+    def work!(socket)
       benchmark = Benchmark.measure{ socket.write(socket.read) }
-      @times_mutex.synchronize{ @processing_times << benchmark.real }
+      params[:processing_times].push(benchmark.real)
+    ensure
+      socket.close rescue false
     end
-
   end
 
   class ServerRunner < Bench::Runner
@@ -37,23 +23,35 @@ module Bench
     def initialize(options = {})
       options[:output] ||= File.expand_path("../server_report.txt", __FILE__)
       super(options)
+
+      @processing_times = DatWorkerPool::LockedArray.new
     end
 
     def run_server
       GC.disable
       host_and_port = HOST_AND_PORT.dup
-      bench_server = Bench::Server.new({ :debug => !!ENV['DEBUG'] })
-      [ "QUIT", "INT", "TERM" ].each do |name|
+
+      bench_server = DatTCP::Server.new(Bench::Worker, {
+        :debug         => !!ENV['DEBUG'],
+        :worker_params => {
+          :processing_times => @processing_times
+        }
+      })
+
+      ["QUIT", "INT", "TERM"].each do |name|
         Signal.trap(name){ bench_server.stop }
       end
-      bench_server.start(*host_and_port)
-      self.write_report(bench_server)
+
+      bench_server.listen(*host_and_port)
+      bench_server.start.join
+
+      self.write_report
     end
 
-    def write_report(server)
+    def write_report
       output "Server statistics\n"
-      if !(benchmarks = server.processing_times).empty?
-        total_time = server.processing_times.inject(0){|s, n| s + n }
+      if !(benchmarks = @processing_times.values).empty?
+        total_time = benchmarks.inject(0){|s, n| s + n }
         data = {
           :number_of_requests => benchmarks.size,
           :total_time_taken   => self.round_and_display(total_time),

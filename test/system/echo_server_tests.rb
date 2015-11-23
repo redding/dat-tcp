@@ -10,7 +10,7 @@ class EchoServerTests < Assert::Context
 
   desc "defining a custom Echo Server"
   setup do
-    @server = EchoServer.new({ :debug => !!ENV['DEBUG'] })
+    @server = EchoServer.new(:debug => !!ENV['DEBUG'])
   end
   teardown do
     @server.stop true
@@ -34,7 +34,7 @@ class EchoServerTests < Assert::Context
 
         client.write('Test')
         client.close_write
-        response = client.read if IO.select([ client ], nil, nil, 1)
+        response = client.read if IO.select([client], nil, nil, 1)
 
         assert_equal "Test", response
       ensure
