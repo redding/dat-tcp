@@ -1,85 +1,101 @@
 require 'assert'
 require 'dat-tcp'
 
+require 'dat-tcp/worker'
+require 'dat-worker-pool/worker'
 require 'dat-worker-pool/worker_pool_spy'
 require 'test/support/tcp_server_spy'
 
-module DatTCP
+class DatTCP::Server
 
   class UnitTests < Assert::Context
     desc "DatTCP::Server"
     setup do
-      @min_workers = 1
-      @max_workers = 1
-      @shutdown_timeout = 1
+      @server_class = DatTCP::Server
+    end
+    subject{ @server_class }
+
+    should "know its default number of workers" do
+      assert_equal 2, DEFAULT_NUM_WORKERS
+    end
+
+    should "raise an argument error if given an invalid worker class" do
+      assert_raises(ArgumentError){ @server_class.new(Module.new) }
+      assert_raises(ArgumentError){ @server_class.new(Class.new) }
+      worker_class = Class.new{ include DatWorkerPool::Worker }
+      assert_raises(ArgumentError){ @server_class.new(worker_class) }
+    end
+
+  end
+
+  class InitTests < UnitTests
+    desc "when init"
+    setup do
       @signal_reader, @signal_writer = IO.pipe
       Assert.stub(IO, :pipe){ [@signal_reader, @signal_writer] }
-      options = {
-        :min_workers      => @min_workers,
-        :max_workers      => @max_workers,
-        :shutdown_timeout => @shutdown_timeout
+
+      @wp_spy = nil
+      Assert.stub(DatWorkerPool, :new) do |*args|
+        @wp_spy = DatWorkerPool::WorkerPoolSpy.new(*args)
+      end
+
+      @worker_class = Class.new do
+        include DatTCP::Worker
+        def work!(socket); socket.close rescue false; end
+      end
+      @options = {
+        :num_workers      => Factory.integer,
+        :shutdown_timeout => Factory.integer,
+        :worker_params    => { Factory.string => Factory.string }
       }
-      @server = DatTCP::Server.new(options){ |s| }
+      @server = @server_class.new(@worker_class, @options)
     end
     subject{ @server }
 
-    should have_readers :worker_start_procs, :worker_shutdown_procs
-    should have_readers :worker_sleep_procs, :worker_wakeup_procs
     should have_imeths :listen, :start
     should have_imeths :pause, :stop, :halt, :stop_listen
     should have_imeths :listening?, :running?
     should have_imeths :ip, :port, :file_descriptor
     should have_imeths :client_file_descriptors
-    should have_imeths :on_worker_start, :on_worker_shutdown
-    should have_imeths :on_worker_sleep, :on_worker_wakeup
 
-    should "not know it's ip, port, file descriptor or client file descriptors" do
+    should "not know it's ip, port, file descriptor" do
       assert_nil subject.ip
       assert_nil subject.port
       assert_nil subject.file_descriptor
+    end
+
+    should "know its client file descriptors" do
       assert_equal [], subject.client_file_descriptors
     end
 
-    should "not have any worker procs by default" do
-      assert_equal [], subject.worker_start_procs
-      assert_equal [], subject.worker_shutdown_procs
-      assert_equal [], subject.worker_sleep_procs
-      assert_equal [], subject.worker_wakeup_procs
-    end
-
     should "not be connected or running by default" do
-      assert_equal false, subject.listening?
-      assert_equal false, subject.running?
+      assert_false subject.listening?
+      assert_false subject.running?
     end
 
-    should "raise an argument error when listen is called with no arguments" do
+    should "build a worker pool" do
+      assert_not_nil @wp_spy
+      assert_equal @worker_class,            @wp_spy.worker_class
+      assert_equal @options[:num_workers],   @wp_spy.num_workers
+      assert_equal @options[:worker_params], @wp_spy.worker_params
+      assert_false @wp_spy.start_called
+    end
+
+    should "default its number of workers" do
+      @options.delete(:num_workers)
+      server = @server_class.new(@worker_class, @options)
+
+      assert_equal DEFAULT_NUM_WORKERS, @wp_spy.num_workers
+    end
+
+    should "raise an argument error when listen is called with invalid args" do
       assert_raises(ArgumentError){ subject.listen }
       assert_raises(ArgumentError){ subject.listen(1, 2, 3) }
     end
 
-    should "raise an exception when start is called without calling listen" do
-      assert_raises(DatTCP::NotListeningError){ subject.start }
-    end
-
-    should "allow reading/writing its worker procs" do
-      proc = Proc.new{}
-
-      subject.on_worker_start(&proc)
-      assert_equal [proc], subject.worker_start_procs
-
-      subject.on_worker_shutdown(&proc)
-      assert_equal [proc], subject.worker_shutdown_procs
-
-      subject.on_worker_sleep(&proc)
-      assert_equal [proc], subject.worker_sleep_procs
-
-      subject.on_worker_wakeup(&proc)
-      assert_equal [proc], subject.worker_wakeup_procs
-    end
-
   end
 
-  class ListenAndRunningTests < UnitTests
+  class ListenAndRunningTests < InitTests
     setup do
       @tcp_server_spy = TCPServerSpy.new.tap do |server|
         @server_ip     = server.ip
@@ -90,9 +106,6 @@ module DatTCP
 
       Assert.stub(::TCPServer, :new).with(@server_ip, @server_port){ @tcp_server_spy }
       Assert.stub(::TCPServer, :for_fd).with(@server_fileno){ @tcp_server_spy }
-      Assert.stub(::DatWorkerPool, :new) do |*args|
-        @worker_pool_spy = DatWorkerPool::WorkerPoolSpy.new(*args)
-      end
       @io_select_stub.set_nothing_on_inputs
     end
     teardown do
@@ -115,8 +128,8 @@ module DatTCP
     end
 
     should "be listening but not running" do
-      assert_equal true,  subject.listening?
-      assert_equal false, subject.running?
+      assert_true  subject.listening?
+      assert_false subject.running?
     end
 
     should "have it's TCPServer listening" do
@@ -128,7 +141,7 @@ module DatTCP
       option = @tcp_server_spy.socket_options.detect do |opt|
         opt.level == Socket::SOL_SOCKET && opt.name == Socket::SO_REUSEADDR
       end
-      assert_equal true, option.value
+      assert_true option.value
     end
 
     should "allow setting socket options on the TCPServer by passing a block" do
@@ -138,11 +151,7 @@ module DatTCP
       option = @tcp_server_spy.socket_options.detect do |opt|
         opt.level == Socket::IPPROTO_TCP && opt.name == Socket::TCP_NODELAY
       end
-      assert_equal true, option.value
-    end
-
-    should "not have built a dat worker pool" do
-      assert_nil @worker_pool_spy
+      assert_true option.value
     end
 
   end
@@ -160,8 +169,8 @@ module DatTCP
     end
 
     should "be listening but not running" do
-      assert_equal true,  subject.listening?
-      assert_equal false, subject.running?
+      assert_true  subject.listening?
+      assert_false subject.running?
     end
 
   end
@@ -169,13 +178,6 @@ module DatTCP
   class StartTests < ListenAndRunningTests
     desc "when start is called"
     setup do
-      Factory.integer(3).times.each do
-        @server.on_worker_start(&proc{ Factory.string })
-        @server.on_worker_shutdown(&proc{ Factory.string })
-        @server.on_worker_sleep(&proc{ Factory.string })
-        @server.on_worker_wakeup(&proc{ Factory.string })
-      end
-
       @server.listen(@server_ip, @server_port)
       @thread = @server.start
     end
@@ -185,24 +187,13 @@ module DatTCP
       assert @thread.alive?
     end
 
-    should "build and start its worker pool" do
-      assert_not_nil @worker_pool_spy
-      assert_equal @min_workers, @worker_pool_spy.min_workers
-      assert_equal @max_workers, @worker_pool_spy.max_workers
-      exp = subject.worker_start_procs
-      assert_equal exp, @worker_pool_spy.on_worker_start_callbacks
-      exp = subject.worker_shutdown_procs
-      assert_equal exp, @worker_pool_spy.on_worker_shutdown_callbacks
-      exp = subject.worker_sleep_procs
-      assert_equal exp, @worker_pool_spy.on_worker_sleep_callbacks
-      exp = subject.worker_wakeup_procs
-      assert_equal exp, @worker_pool_spy.on_worker_wakeup_callbacks
-      assert_true @worker_pool_spy.start_called
+    should "start its worker pool" do
+      assert_true @wp_spy.start_called
     end
 
     should "be listening and running?" do
-      assert_equal true, subject.listening?
-      assert_equal true, subject.running?
+      assert_true subject.listening?
+      assert_true subject.running?
     end
 
   end
@@ -218,17 +209,17 @@ module DatTCP
     end
 
     should "accept connections and add them to the worker pool" do
-      assert_includes @client, @worker_pool_spy.work_items
+      assert_includes @client, @wp_spy.work_items
     end
 
-    should "allow retrieving the client sockets file descriptors" do
-      assert_includes @client.fileno, subject.client_file_descriptors
+    should "know its client file descriptors" do
+      assert_equal [@client.fileno], subject.client_file_descriptors
     end
 
-    should "client file descriptors should still be accessible after its paused" do
+    should "still know its client file descriptors after its paused" do
       @io_select_stub.set_data_on_signal_pipe
-      @server.pause true
-      assert_includes @client.fileno, subject.client_file_descriptors
+      subject.pause true
+      assert_equal [@client.fileno], subject.client_file_descriptors
     end
 
   end
@@ -246,7 +237,7 @@ module DatTCP
     end
 
     should "add the clients to the worker pool" do
-      @clients.each{ |c| assert_includes c, @worker_pool_spy.work_items }
+      @clients.each{ |c| assert_includes c, @wp_spy.work_items }
     end
 
   end
@@ -261,8 +252,8 @@ module DatTCP
     end
 
     should "have shutdown the worker pool" do
-      assert @worker_pool_spy.shutdown_called
-      assert_equal @shutdown_timeout, @worker_pool_spy.shutdown_timeout
+      assert @wp_spy.shutdown_called
+      assert_equal @options[:shutdown_timeout], @wp_spy.shutdown_timeout
     end
 
     should "have stopped the TCPServer listening" do
@@ -274,8 +265,8 @@ module DatTCP
     end
 
     should "not be listening or running" do
-      assert_equal false, subject.listening?
-      assert_equal false, subject.running?
+      assert_false subject.listening?
+      assert_false subject.running?
     end
 
   end
@@ -290,7 +281,7 @@ module DatTCP
     end
 
     should "not have shutdown the worker pool" do
-      assert_not @worker_pool_spy.shutdown_called
+      assert_not @wp_spy.shutdown_called
     end
 
     should "have stopped the TCPServer listening" do
@@ -302,8 +293,8 @@ module DatTCP
     end
 
     should "not be listening or running" do
-      assert_equal false, subject.listening?
-      assert_equal false, subject.running?
+      assert_false subject.listening?
+      assert_false subject.running?
     end
 
   end
@@ -318,8 +309,8 @@ module DatTCP
     end
 
     should "have shutdown the worker pool" do
-      assert @worker_pool_spy.shutdown_called
-      assert_equal @shutdown_timeout, @worker_pool_spy.shutdown_timeout
+      assert @wp_spy.shutdown_called
+      assert_equal @options[:shutdown_timeout], @wp_spy.shutdown_timeout
     end
 
     should "not have stopped the TCPServer listening" do
@@ -331,8 +322,8 @@ module DatTCP
     end
 
     should "be listening but not running" do
-      assert_equal true, subject.listening?
-      assert_equal false, subject.running?
+      assert_true  subject.listening?
+      assert_false subject.running?
     end
 
   end
