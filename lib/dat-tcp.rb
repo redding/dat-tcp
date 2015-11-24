@@ -13,6 +13,8 @@ module DatTCP
     DEFAULT_SHUTDOWN_TIMEOUT = 15
     DEFAULT_NUM_WORKERS      = 2
 
+    SIGNAL = '.'.freeze
+
     def initialize(worker_class, options = nil)
       if !worker_class.kind_of?(Class) || !worker_class.include?(DatTCP::Worker)
         raise ArgumentError, "worker class must include `#{DatTCP::Worker}`"
@@ -38,7 +40,7 @@ module DatTCP
 
       @tcp_server = nil
       @thread     = nil
-      @signal     = Signal.new(:stop)
+      @state      = State.new(:stop)
     end
 
     def ip
@@ -66,7 +68,7 @@ module DatTCP
     end
 
     def listen(*args)
-      @signal.set :listen
+      @state.set :listen
       @tcp_server = TCPServer.build(*args)
       raise ArgumentError, "takes ip and port or file descriptor" if !@tcp_server
       yield @tcp_server if block_given?
@@ -80,22 +82,28 @@ module DatTCP
 
     def start(passed_client_fds = nil)
       raise NotListeningError.new unless listening?
-      @signal.set :start
+      @state.set :run
       @thread = Thread.new{ work_loop(passed_client_fds) }
     end
 
     def pause(wait = false)
-      @signal_writer.write_nonblock('p')
+      return unless self.running?
+      @state.set :pause
+      wakeup_thread
       wait_for_shutdown if wait
     end
 
     def stop(wait = false)
-      @signal_writer.write_nonblock('s')
+      return unless self.running?
+      @state.set :stop
+      wakeup_thread
       wait_for_shutdown if wait
     end
 
     def halt(wait = false)
-      @signal_writer.write_nonblock('h')
+      return unless self.running?
+      @state.set :halt
+      wakeup_thread
       wait_for_shutdown if wait
     end
 
@@ -111,8 +119,9 @@ module DatTCP
 
     def work_loop(passed_client_fds)
       setup(passed_client_fds)
-      accept_client_connections while @signal.start?
+      accept_client_connections while @state.run?
     rescue StandardError => exception
+      @state.set :stop
       log{ "An error occurred while running the server, exiting" }
       log{ "#{exception.class}: #{exception.message}" }
       (exception.backtrace || []).each{ |l| log{ l } }
@@ -135,20 +144,24 @@ module DatTCP
       end
 
       if ready_inputs.include?(@signal_reader)
-        @signal.send @signal_reader.read_nonblock(1)
+        @signal_reader.read_nonblock(SIGNAL.bytesize)
       end
     end
 
     def teardown
-      unless @signal.pause?
+      unless @state.pause?
         log{ "Stop listening for connections, closing TCP socket" }
         self.stop_listen
       end
 
-      timeout = @signal.halt? ? 0 : @shutdown_timeout
+      timeout = @state.halt? ? 0 : @shutdown_timeout
       @worker_pool.shutdown(timeout)
     ensure
       @thread = nil
+    end
+
+    def wakeup_thread
+      @signal_writer.write_nonblock(SIGNAL)
     end
 
     def wait_for_shutdown
@@ -159,39 +172,12 @@ module DatTCP
       @logger_proxy.log(&message_block)
     end
 
-    class Signal
-      def initialize(value)
-        @value = value
-        @mutex = Mutex.new
-      end
-
-      def s; set :stop;  end
-      def h; set :halt;  end
-      def p; set :pause; end
-
-      def set(value)
-        @mutex.synchronize{ @value = value }
-      end
-
-      def listen?
-        @mutex.synchronize{ @value == :listen }
-      end
-
-      def start?
-        @mutex.synchronize{ @value == :start }
-      end
-
-      def pause?
-        @mutex.synchronize{ @value == :pause }
-      end
-
-      def stop?
-        @mutex.synchronize{ @value == :stop }
-      end
-
-      def halt?
-        @mutex.synchronize{ @value == :halt }
-      end
+    class State < DatWorkerPool::LockedObject
+      def listen?; self.value == :listen; end
+      def run?;    self.value == :run;    end
+      def pause?;  self.value == :pause;  end
+      def stop?;   self.value == :stop;   end
+      def halt?;   self.value == :halt;   end
     end
 
     module TCPServer
