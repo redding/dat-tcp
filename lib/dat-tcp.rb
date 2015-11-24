@@ -9,7 +9,9 @@ module DatTCP
 
   class Server
 
-    DEFAULT_NUM_WORKERS = 2
+    DEFAULT_BACKLOG_SIZE     = 1024
+    DEFAULT_SHUTDOWN_TIMEOUT = 15
+    DEFAULT_NUM_WORKERS      = 2
 
     def initialize(worker_class, options = nil)
       if !worker_class.kind_of?(Class) || !worker_class.include?(DatTCP::Worker)
@@ -17,8 +19,8 @@ module DatTCP
       end
 
       options ||= {}
-      @backlog_size     = options[:backlog_size]     || 1024
-      @shutdown_timeout = options[:shutdown_timeout] || 15
+      @backlog_size     = options[:backlog_size]     || DEFAULT_BACKLOG_SIZE
+      @shutdown_timeout = options[:shutdown_timeout] || DEFAULT_SHUTDOWN_TIMEOUT
 
       @signal_reader, @signal_writer = IO.pipe
 
