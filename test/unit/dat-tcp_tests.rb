@@ -337,6 +337,51 @@ class DatTCP::Server
 
   end
 
+  class StateTests < UnitTests
+    desc "State"
+    setup do
+      @state = State.new
+    end
+    subject{ @state }
+
+    should have_imeths :listen?, :run?, :pause?, :stop?, :halt?
+
+    should "be a dat-worker-pool locked object" do
+      assert State < DatWorkerPool::LockedObject
+    end
+
+    should "know if its in the listen state" do
+      assert_false subject.listen?
+      subject.set :listen
+      assert_true subject.listen?
+    end
+
+    should "know if its in the run state" do
+      assert_false subject.run?
+      subject.set :run
+      assert_true subject.run?
+    end
+
+    should "know if its in the pause state" do
+      assert_false subject.pause?
+      subject.set :pause
+      assert_true subject.pause?
+    end
+
+    should "know if its in the stop state" do
+      assert_false subject.stop?
+      subject.set :stop
+      assert_true subject.stop?
+    end
+
+    should "know if its in the halt state" do
+      assert_false subject.halt?
+      subject.set :halt
+      assert_true subject.halt?
+    end
+
+  end
+
   class IOSelectStub
     # Stub IO.select to behave how it does for 2 scenarios: clients have
     # connected and are available OR clients haven't connected and aren't
@@ -349,13 +394,13 @@ class DatTCP::Server
 
     def set_client_on_tcp_server
       Assert.stub(IO, :select).with([@tcp_server, @signal_pipe]) do
-        [ [ @tcp_server ], [], [] ]
+        [ [@tcp_server], [], [] ]
       end
     end
 
     def set_data_on_signal_pipe
       Assert.stub(IO, :select).with([@tcp_server, @signal_pipe]) do
-        [ [ @signal_pipe ], [], [] ]
+        [ [@signal_pipe], [], [] ]
       end
     end
 
@@ -370,7 +415,7 @@ class DatTCP::Server
     attr_reader :fileno
 
     def initialize(fileno = nil)
-      @fileno = fileno || rand(999999)
+      @fileno = fileno || Factory.integer
     end
   end
 
