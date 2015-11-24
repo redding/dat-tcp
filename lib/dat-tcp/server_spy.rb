@@ -1,12 +1,9 @@
-require 'dat-tcp/logger'
-
 module DatTCP
 
   class ServerSpy
 
     attr_reader :ip, :port, :file_descriptor
     attr_reader :client_file_descriptors
-    attr_reader :logger
     attr_reader :worker_start_procs, :worker_shutdown_procs
     attr_reader :worker_sleep_procs, :worker_wakeup_procs
     attr_reader :waiting_for_pause, :waiting_for_stop, :waiting_for_halt
@@ -21,7 +18,6 @@ module DatTCP
       @port = nil
       @file_descriptor = nil
       @client_file_descriptors = []
-      @logger = DatTCP::Logger::Null.new
 
       @worker_start_procs    = []
       @worker_shutdown_procs = []

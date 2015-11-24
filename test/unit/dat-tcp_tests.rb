@@ -227,7 +227,7 @@ class DatTCP::Server
   class StartWithClientFileDescriptorTests < ListenAndRunningTests
     desc "when start is called and given client file descriptors"
     setup do
-      @clients = [*1..2].map do |n|
+      @clients = Factory.integer(3).times.map do |n|
         client = FakeSocket.new
         Assert.stub(TCPSocket, :for_fd).with(client.fileno){ client }
         client
@@ -280,8 +280,9 @@ class DatTCP::Server
       @server.halt true
     end
 
-    should "not have shutdown the worker pool" do
-      assert_not @wp_spy.shutdown_called
+    should "shutdown the worker pool with a 0 second timeout" do
+      assert_true @wp_spy.shutdown_called
+      assert_equal 0, @wp_spy.shutdown_timeout
     end
 
     should "have stopped the TCPServer listening" do

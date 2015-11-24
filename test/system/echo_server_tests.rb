@@ -10,7 +10,7 @@ class EchoServerTests < Assert::Context
 
   desc "defining a custom Echo Server"
   setup do
-    @server = EchoServer.new(:debug => !!ENV['DEBUG'])
+    @server = EchoServer.new(:logger => TEST_LOGGER)
   end
   teardown do
     @server.stop true
@@ -21,7 +21,7 @@ class EchoServerTests < Assert::Context
     thread = @server.start
 
     assert_instance_of Thread, thread
-    assert thread.alive?
+    assert_true thread.alive?
   end
 
   should "be able to connect, send messages and have them echoed back" do
