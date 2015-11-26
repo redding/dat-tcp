@@ -11,6 +11,16 @@ module DatTCP
       end
     end
 
+    module TestHelpers
+
+      def self.included(klass)
+        klass.class_eval do
+          include DatWorkerPool::Worker::TestHelpers
+        end
+      end
+
+    end
+
   end
 
 end

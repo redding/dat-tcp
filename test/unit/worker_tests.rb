@@ -20,4 +20,17 @@ module DatTCP::Worker
 
   end
 
+  class TestHelpersTests < UnitTests
+    desc "TestHelpers"
+    setup do
+      @context_class = Class.new{ include TestHelpers }
+    end
+    subject{ @context_class }
+
+    should "mixin dat-worker-pool's worker test helpers" do
+      assert_includes DatWorkerPool::Worker::TestHelpers, @context_class
+    end
+
+  end
+
 end
