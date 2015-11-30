@@ -1,45 +1,49 @@
-require 'dat-tcp/logger'
+require 'dat-tcp'
+require 'dat-tcp/worker'
 
 module DatTCP
 
   class ServerSpy
 
+    attr_reader :worker_class
+    attr_reader :options, :backlog_size, :shutdown_timeout
+    attr_reader :num_workers, :logger, :worker_params
     attr_reader :ip, :port, :file_descriptor
     attr_reader :client_file_descriptors
-    attr_reader :logger
-    attr_reader :worker_start_procs, :worker_shutdown_procs
-    attr_reader :worker_sleep_procs, :worker_wakeup_procs
     attr_reader :waiting_for_pause, :waiting_for_stop, :waiting_for_halt
     attr_accessor :listen_called, :start_called
     attr_accessor :stop_listen_called, :pause_called
     attr_accessor :stop_called, :halt_called
 
-    attr_accessor :serve_proc
+    def initialize(worker_class, options = nil)
+      @worker_class = worker_class
+      if !@worker_class.kind_of?(Class) || !@worker_class.include?(DatTCP::Worker)
+        raise ArgumentError, "worker class must include `#{DatTCP::Worker}`"
+      end
 
-    def initialize
-      @ip = nil
-      @port = nil
-      @file_descriptor = nil
+      server_ns = DatTCP::Server
+      @options          = options || {}
+      @backlog_size     = @options[:backlog_size]     || server_ns::DEFAULT_BACKLOG_SIZE
+      @shutdown_timeout = @options[:shutdown_timeout] || server_ns::DEFAULT_SHUTDOWN_TIMEOUT
+      @num_workers      = (@options[:num_workers]     || server_ns::DEFAULT_NUM_WORKERS).to_i
+      @logger           = @options[:logger]
+      @worker_params    = @options[:worker_params]
+
+      @ip                      = nil
+      @port                    = nil
+      @file_descriptor         = nil
       @client_file_descriptors = []
-      @logger = DatTCP::Logger::Null.new
-
-      @worker_start_procs    = []
-      @worker_shutdown_procs = []
-      @worker_sleep_procs    = []
-      @worker_wakeup_procs   = []
 
       @waiting_for_pause = nil
-      @waiting_for_stop = nil
-      @waiting_for_halt = nil
+      @waiting_for_stop  = nil
+      @waiting_for_halt  = nil
 
-      @listen_called = false
+      @listen_called      = false
       @stop_listen_called = false
-      @start_called = false
-      @pause_called = false
-      @stop_called = false
-      @halt_called = false
-
-      @serve_proc = proc{ }
+      @start_called       = false
+      @pause_called       = false
+      @stop_called        = false
+      @halt_called        = false
     end
 
     def listening?
@@ -64,8 +68,8 @@ module DatTCP
       @stop_listen_called = true
     end
 
-    def start(client_file_descriptors = nil)
-      @client_file_descriptors = client_file_descriptors || []
+    def start(passed_client_fds = nil)
+      @client_file_descriptors = passed_client_fds || []
       @start_called = true
     end
 
@@ -83,11 +87,6 @@ module DatTCP
       @waiting_for_halt = wait
       @halt_called = true
     end
-
-    def on_worker_start(&block);    @worker_start_procs << block;    end
-    def on_worker_shutdown(&block); @worker_shutdown_procs << block; end
-    def on_worker_sleep(&block);    @worker_sleep_procs << block;    end
-    def on_worker_wakeup(&block);   @worker_wakeup_procs << block;   end
 
   end
 

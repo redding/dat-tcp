@@ -3,38 +3,44 @@ require 'socket'
 require 'thread'
 
 require 'dat-tcp/version'
-require 'dat-tcp/logger'
+require 'dat-tcp/worker'
 
 module DatTCP
 
   class Server
 
-    attr_reader :worker_start_procs, :worker_shutdown_procs
-    attr_reader :worker_sleep_procs, :worker_wakeup_procs
-    attr_reader :logger
-    private :logger
+    DEFAULT_BACKLOG_SIZE     = 1024
+    DEFAULT_SHUTDOWN_TIMEOUT = 15
+    DEFAULT_NUM_WORKERS      = 2
 
-    def initialize(config = nil, &serve_proc)
-      config ||= {}
-      @backlog_size     = config[:backlog_size]     || 1024
-      @debug            = config[:debug]            || false
-      @min_workers      = config[:min_workers]      || 2
-      @max_workers      = config[:max_workers]      || 4
-      @shutdown_timeout = config[:shutdown_timeout] || 15
+    SIGNAL = '.'.freeze
+
+    def initialize(worker_class, options = nil)
+      if !worker_class.kind_of?(Class) || !worker_class.include?(DatTCP::Worker)
+        raise ArgumentError, "worker class must include `#{DatTCP::Worker}`"
+      end
+
+      options ||= {}
+      @backlog_size     = options[:backlog_size]     || DEFAULT_BACKLOG_SIZE
+      @shutdown_timeout = options[:shutdown_timeout] || DEFAULT_SHUTDOWN_TIMEOUT
+
       @signal_reader, @signal_writer = IO.pipe
-      @serve_proc = serve_proc || raise(ArgumentError, "no block given")
 
-      @worker_start_procs    = []
-      @worker_shutdown_procs = []
-      @worker_sleep_procs    = []
-      @worker_wakeup_procs   = []
+      @logger_proxy = if options[:logger]
+        LoggerProxy.new(options[:logger])
+      else
+        NullLoggerProxy.new
+      end
 
-      @logger = DatTCP::Logger.new(@debug)
+      @worker_pool = DatWorkerPool.new(worker_class, {
+        :num_workers   => (options[:num_workers] || DEFAULT_NUM_WORKERS),
+        :logger        => options[:logger],
+        :worker_params => options[:worker_params]
+      })
 
-      @tcp_server       = nil
-      @work_loop_thread = nil
-      @worker_pool      = nil
-      @signal = Signal.new(:stop)
+      @tcp_server = nil
+      @thread     = nil
+      @state      = State.new(:stop)
     end
 
     def ip
@@ -50,7 +56,7 @@ module DatTCP
     end
 
     def client_file_descriptors
-      @worker_pool ? @worker_pool.work_items.map(&:fileno) : []
+      @worker_pool.work_items.map(&:fileno)
     end
 
     def listening?
@@ -58,11 +64,11 @@ module DatTCP
     end
 
     def running?
-      !!(@work_loop_thread && @work_loop_thread.alive?)
+      !!(@thread && @thread.alive?)
     end
 
     def listen(*args)
-      @signal.set :listen
+      @state.set :listen
       @tcp_server = TCPServer.build(*args)
       raise ArgumentError, "takes ip and port or file descriptor" if !@tcp_server
       yield @tcp_server if block_given?
@@ -74,159 +80,104 @@ module DatTCP
       @tcp_server = nil
     end
 
-    def start(client_file_descriptors = nil)
+    def start(passed_client_fds = nil)
       raise NotListeningError.new unless listening?
-      @signal.set :start
-      @work_loop_thread = Thread.new{ work_loop(client_file_descriptors) }
+      @state.set :run
+      @thread = Thread.new{ work_loop(passed_client_fds) }
     end
 
     def pause(wait = false)
-      @signal_writer.write_nonblock('p')
+      return unless self.running?
+      @state.set :pause
+      wakeup_thread
       wait_for_shutdown if wait
     end
 
     def stop(wait = false)
-      @signal_writer.write_nonblock('s')
+      return unless self.running?
+      @state.set :stop
+      wakeup_thread
       wait_for_shutdown if wait
     end
 
     def halt(wait = false)
-      @signal_writer.write_nonblock('h')
+      return unless self.running?
+      @state.set :halt
+      wakeup_thread
       wait_for_shutdown if wait
     end
-
-    def on_worker_start(&block);    @worker_start_procs << block;    end
-    def on_worker_shutdown(&block); @worker_shutdown_procs << block; end
-    def on_worker_sleep(&block);    @worker_sleep_procs << block;    end
-    def on_worker_wakeup(&block);   @worker_wakeup_procs << block;   end
 
     def inspect
       reference = '0x0%x' % (self.object_id << 1)
       "#<#{self.class}:#{reference}".tap do |s|
         s << " @ip=#{ip.inspect} @port=#{port.inspect}"
-        s << " @work_loop_status=#{@work_loop_thread.status.inspect}" if running?
         s << ">"
       end
     end
 
     private
 
-    def serve(socket)
-      @serve_proc.call(socket)
-    ensure
-      socket.close rescue false
-    end
-
-    def work_loop(client_file_descriptors = nil)
-      logger.info "Starting work loop..."
-      @worker_pool = build_worker_pool
-      add_client_sockets_from_fds client_file_descriptors
-      @worker_pool.start
-      process_inputs while @signal.start?
-      logger.info "Stopping work loop..."
-      shutdown_worker_pool unless @signal.halt?
+    def work_loop(passed_client_fds)
+      setup(passed_client_fds)
+      accept_client_connections while @state.run?
     rescue StandardError => exception
-      logger.error "Exception occurred, stopping server!"
-      logger.error "#{exception.class}: #{exception.message}"
-      logger.error exception.backtrace.join("\n")
+      @state.set :stop
+      log{ "An error occurred while running the server, exiting" }
+      log{ "#{exception.class}: #{exception.message}" }
+      (exception.backtrace || []).each{ |l| log{ l } }
     ensure
-      unless @signal.pause?
-        logger.info "Closing TCP server connection"
-        stop_listen
-      end
-      clear_thread
-      logger.info "Stopped work loop"
+      teardown
     end
 
-    def build_worker_pool
-      wp = DatWorkerPool.new(
-        @min_workers,
-        @max_workers
-      ){ |socket| serve(socket) }
-
-      # add any configured callbacks
-      self.worker_start_procs.each do |cb|
-        wp.on_worker_start(&cb)
-      end
-      self.worker_shutdown_procs.each do |cb|
-        wp.on_worker_shutdown(&cb)
-      end
-      self.worker_sleep_procs.each do |cb|
-        wp.on_worker_sleep(&cb)
-      end
-      self.worker_wakeup_procs.each do |cb|
-        wp.on_worker_wakeup(&cb)
-      end
-
-      wp
-    end
-
-    def add_client_sockets_from_fds(file_descriptors)
-      (file_descriptors || []).each do |file_descriptor|
-        @worker_pool.add_work TCPSocket.for_fd(file_descriptor)
+    def setup(passed_client_fds)
+      @worker_pool.start
+      (passed_client_fds || []).each do |fd|
+        @worker_pool.push TCPSocket.for_fd(fd)
       end
     end
 
-    def process_inputs
-      ready_inputs, _, _ = IO.select([ @tcp_server, @signal_reader ])
-      accept_connection if ready_inputs.include?(@tcp_server)
-      process_signal    if ready_inputs.include?(@signal_reader)
+    def accept_client_connections
+      ready_inputs, _, _ = IO.select([@tcp_server, @signal_reader])
+
+      if ready_inputs.include?(@tcp_server)
+        @worker_pool.push @tcp_server.accept
+      end
+
+      if ready_inputs.include?(@signal_reader)
+        @signal_reader.read_nonblock(SIGNAL.bytesize)
+      end
     end
 
-    def accept_connection
-      @worker_pool.add_work @tcp_server.accept
+    def teardown
+      unless @state.pause?
+        log{ "Stop listening for connections, closing TCP socket" }
+        self.stop_listen
+      end
+
+      timeout = @state.halt? ? 0 : @shutdown_timeout
+      @worker_pool.shutdown(timeout)
+    ensure
+      @thread = nil
     end
 
-    def process_signal
-      @signal.send @signal_reader.read_nonblock(1)
-    end
-
-    def shutdown_worker_pool
-      logger.info "Shutting down worker pool"
-      @worker_pool.shutdown(@shutdown_timeout)
-    end
-
-    def clear_thread
-      @work_loop_thread = nil
+    def wakeup_thread
+      @signal_writer.write_nonblock(SIGNAL)
     end
 
     def wait_for_shutdown
-      @work_loop_thread.join if @work_loop_thread
+      @thread.join if @thread
     end
 
-    class Signal
-      def initialize(value)
-        @value = value
-        @mutex = Mutex.new
-      end
+    def log(&message_block)
+      @logger_proxy.log(&message_block)
+    end
 
-      def s; set :stop;  end
-      def h; set :halt;  end
-      def p; set :pause; end
-
-      def set(value)
-        @mutex.synchronize{ @value = value }
-      end
-
-      def listen?
-        @mutex.synchronize{ @value == :listen }
-      end
-
-      def start?
-        @mutex.synchronize{ @value == :start }
-      end
-
-      def pause?
-        @mutex.synchronize{ @value == :pause }
-      end
-
-      def stop?
-        @mutex.synchronize{ @value == :stop }
-      end
-
-      def halt?
-        @mutex.synchronize{ @value == :halt }
-      end
+    class State < DatWorkerPool::LockedObject
+      def listen?; self.value == :listen; end
+      def run?;    self.value == :run;    end
+      def pause?;  self.value == :pause;  end
+      def stop?;   self.value == :stop;   end
+      def halt?;   self.value == :halt;   end
     end
 
     module TCPServer
@@ -261,6 +212,16 @@ module DatTCP
         tcp_server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true)
         tcp_server
       end
+    end
+
+    class LoggerProxy < Struct.new(:logger)
+      def log(&message_block)
+        self.logger.debug("[DTCP] #{message_block.call}")
+      end
+    end
+
+    class NullLoggerProxy
+      def log(&block); end
     end
 
   end

@@ -1,9 +1,17 @@
 require 'dat-tcp'
 
 module EchoServer
-  def self.new(*args)
-    DatTCP::Server.new(*args) do |socket|
+  def self.new(options = nil)
+    DatTCP::Server.new(EchoServer::Worker, options)
+  end
+
+  class Worker
+    include DatTCP::Worker
+
+    def work!(socket)
       socket.write(socket.read)
+    ensure
+      socket.close rescue false
     end
   end
 
