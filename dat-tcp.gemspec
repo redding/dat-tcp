@@ -8,9 +8,8 @@ Gem::Specification.new do |gem|
   gem.version       = DatTCP::VERSION
   gem.authors       = ["Collin Redding", "Kelly Redding"]
   gem.email         = ["collin.redding@me.com", "kelly@kellyredding.com"]
-  gem.description   = "A generic threaded TCP server API.  It is"\
-                      " designed for use as a base for application servers."
   gem.summary       = "A generic threaded TCP server API"
+  gem.description   = "A generic threaded TCP server API."
   gem.homepage      = "https://github.com/redding/dat-tcp"
   gem.license       = 'MIT'
 
@@ -19,8 +18,9 @@ Gem::Specification.new do |gem|
   gem.test_files    = gem.files.grep(%r{^(test|spec|features)/})
   gem.require_paths = ["lib"]
 
-  gem.add_dependency("dat-worker-pool", ["~> 0.6"])
+  gem.add_development_dependency("assert", ["~> 2.15.0"])
+  gem.add_development_dependency("scmd",   ["~> 3.0.1"])
 
-  gem.add_development_dependency("assert", ["~> 2.15"])
-  gem.add_development_dependency("scmd",   ["~> 3.0"])
+  gem.add_dependency("dat-worker-pool", ["~> 0.6.0"])
+
 end
