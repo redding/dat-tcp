@@ -16,6 +16,8 @@ TEST_LOGGER = if ENV['DEBUG']
   Logger.new(ROOT_PATH.join("log/test.log")).tap{ |l| l.datetime_format = '' }
 end
 
+JOIN_SECONDS = 0.1
+
 require 'test/support/factory'
 
 # 1.8.7 backfills

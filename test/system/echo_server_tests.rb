@@ -19,6 +19,7 @@ class EchoServerTests < Assert::Context
   should "have started a separate thread for running the server" do
     @server.listen('127.0.0.1', 56789)
     thread = @server.start
+    thread.join(JOIN_SECONDS)
 
     assert_instance_of Thread, thread
     assert_true thread.alive?

@@ -21,8 +21,16 @@ module EchoServer
       begin
         pid = fork do
           server.listen(*args)
-          trap("TERM"){ server.stop(true) }
+          reader, writer = IO.pipe
+          stop_thread = Thread.new do
+            !!::IO.select([reader])
+            server.stop(true)
+          end
+          trap("TERM"){ writer.write_nonblock('.') rescue false }
           server.start.join
+          stop_thread.join
+          reader.close rescue false
+          writer.close rescue false
         end
         sleep 0.3 # Give time for the socket to start listening.
         yield

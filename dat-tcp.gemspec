@@ -19,7 +19,7 @@ Gem::Specification.new do |gem|
   gem.require_paths = ["lib"]
 
   gem.add_development_dependency("assert", ["~> 2.16.1"])
-  gem.add_development_dependency("scmd",   ["~> 3.0.1"])
+  gem.add_development_dependency("scmd",   ["~> 3.0.2"])
 
   gem.add_dependency("dat-worker-pool", ["~> 0.6.0"])
 
