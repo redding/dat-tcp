@@ -188,6 +188,7 @@ class DatTCP::Server
     setup do
       @server.listen(@server_ip, @server_port)
       @thread = @server.start
+      @thread.join(JOIN_SECONDS)
     end
 
     should "return a thread for running the server" do
@@ -214,6 +215,7 @@ class DatTCP::Server
       @io_select_stub.set_client_on_tcp_server
       @server.listen(@server_ip, @server_port)
       @thread = @server.start
+      @thread.join(JOIN_SECONDS)
     end
 
     should "accept connections and add them to the worker pool" do
@@ -242,6 +244,7 @@ class DatTCP::Server
       end
       @server.listen(@server_ip, @server_port)
       @thread = @server.start(@clients.map(&:fileno))
+      @thread.join(JOIN_SECONDS)
     end
 
     should "add the clients to the worker pool" do
@@ -255,6 +258,7 @@ class DatTCP::Server
     setup do
       @server.listen(@server_ip, @server_port)
       @thread = @server.start
+      @thread.join(JOIN_SECONDS)
       @io_select_stub.set_data_on_signal_pipe
       @server.stop true
     end
@@ -284,6 +288,7 @@ class DatTCP::Server
     setup do
       @server.listen(@server_ip, @server_port)
       @thread = @server.start
+      @thread.join(JOIN_SECONDS)
       @io_select_stub.set_data_on_signal_pipe
       @server.halt true
     end
@@ -313,6 +318,7 @@ class DatTCP::Server
     setup do
       @server.listen(@server_ip, @server_port)
       @thread = @server.start
+      @thread.join(JOIN_SECONDS)
       @io_select_stub.set_data_on_signal_pipe
       @server.pause true
     end
